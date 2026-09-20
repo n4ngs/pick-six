@@ -32,6 +32,7 @@ const VSIN = require('./lib/vsin');
 const PIN = require('./lib/pinnacle');
 const Bets = require('./lib/bets');
 const Manual = require('./lib/manual');
+const Group = require('./lib/group');
 const { margins } = require('./lib/margins');
 
 const { log } = U;
@@ -183,8 +184,9 @@ function feeds() {
   return seen;
 }
 
-function snapshot(uid) {
+function snapshot(uid, role = 'owner') {
   const W = weeks.get(defId);
+  const me = Group.person(uid);
   return {
     now: Date.now(),
     season: cal.season,
@@ -194,6 +196,8 @@ function snapshot(uid) {
     books: BOOKS.map(({ key, name, short, vegas, sharp, site, ios }) => ({ key, name, short, vegas: !!vegas, sharp: !!sharp, site: site || null, ios: ios || null, feed: feeds().has(key) })),
     bets: Bets.list(uid),
     liveMs: LIVE_MS,
+    // Who you are on this board, and — for a guest — the plain truth about who can see their tickets.
+    me: { role, name: me?.name || '', named: !!me?.name, owner: OWNER_NAME || '', shared: !!ACCESS_CODE },
   };
 }
 
@@ -204,10 +208,12 @@ function emit(type, data) {
 }
 // Bets are private: each connection gets only its own owner's list.
 function emitBets() {
-  for (const res of clients) res.write(`event: bets\ndata: ${JSON.stringify(Bets.list(res.uid))}\n\n`);
+  if (!clients.size) return;
+  const by = Bets.byOwner();
+  for (const res of clients) res.write(`event: bets\ndata: ${JSON.stringify(by.get(res.uid) || [])}\n\n`);
 }
 function emitSnapshot() {
-  for (const res of clients) res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot(res.uid))}\n\n`);
+  for (const res of clients) res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot(res.uid, res.role))}\n\n`);
 }
 // Push every game in the week whose public view changed since the last push.
 function flush(W) {
@@ -595,24 +601,37 @@ function writeBudget(uid) {
 }
 const cookieOf = (req) => Object.fromEntries(String(req.headers.cookie || '').split(';').map((c) => c.trim().split('=')).filter((x) => x[0]));
 function authed(req) {
-  if (!ACCESS_CODE) return true;
-  return sameHash(cookieOf(req).ps_code || '', codeHash);
+  return roleOf(req) !== null;
 }
 // ---------------------------------------------------------------- whose bets
-// Every device gets a random id in a secure cookie, set silently on its first request after the access code, so
-// nobody signs up and nobody is signed out. Bets belong to that id. A second device joins the same log with a
-// short-lived link code (Tools). OWNER_CODE lets the app's owner claim bets saved before ids existed.
+// Every device gets a random id in a secure cookie, set silently on its first visit, so nobody signs up and
+// nobody is signed out. Bets belong to that id. A second device joins the same log with a short-lived link
+// code (Tools). OWNER_CODE lets the app's owner claim bets saved before ids existed.
 const OWNER_CODE = process.env.OWNER_CODE || '';
+// Whose board this is, for the wording a guest reads ("Chris's board"). Only a display name.
+const OWNER_NAME = (process.env.OWNER_NAME || '').trim().slice(0, 24);
 const UID_RE = /^[a-f0-9]{32}$/;
 const uidOf = (req) => { const v = cookieOf(req).ps_uid || ''; return UID_RE.test(v) ? v : ''; };
+// setHeader replaces; a join sets two cookies at once, so they're appended.
+function addCookie(res, str) {
+  const had = res.getHeader('set-cookie');
+  res.setHeader('set-cookie', had ? [].concat(had, str) : [str]);
+}
+const cookieOpts = (req) => `Path=/; Max-Age=63072000; HttpOnly; SameSite=Lax${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`;
 function setUid(req, res, uid) {
-  const secure = req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
-  res.setHeader('set-cookie', `ps_uid=${uid}; Path=/; Max-Age=63072000; HttpOnly; SameSite=Lax${secure}`);
+  addCookie(res, `ps_uid=${uid}; ${cookieOpts(req)}`);
 }
 function ensureUid(req, res) {
   let uid = uidOf(req);
   if (!uid) { uid = crypto.randomBytes(16).toString('hex'); setUid(req, res, uid); }
   return uid;
+}
+// Two ways in. The code makes you the owner of the board; a share link makes you a guest, who sees the whole
+// board and only their own tickets. With no code set, the app is open and everyone is the owner.
+function roleOf(req) {
+  if (!ACCESS_CODE) return 'owner';
+  if (sameHash(cookieOf(req).ps_code || '', codeHash)) return 'owner';
+  return Group.byToken(cookieOf(req).ps_key || '') ? 'guest' : null;
 }
 // Link codes: 8 characters without look-alikes, good for 10 minutes and one use.
 const LINK_ABC = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -626,11 +645,11 @@ function newLink(uid) {
   return { code, exp: Date.now() + 10 * 60e3 };
 }
 const OPEN_PATHS = new Set(['/manifest.webmanifest', '/icons/icon.svg', '/icons/apple-touch-icon.png', '/icons/icon-192.png', '/icons/icon-512.png']);
-function loginPage(res, wrong) {
+function loginPage(res, wrong, note) {
   res.writeHead(wrong ? 401 : 200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
   res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pick Six</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#000;color:#F5F5F7;font:16px/1.4 ui-sans-serif,system-ui}form{display:grid;gap:12px;width:min(320px,90vw)}h1{font-size:28px;margin:0 0 8px;letter-spacing:-.03em}input,button{height:48px;border-radius:14px;border:0;font:inherit;padding:0 14px}input{background:#161618;color:#F5F5F7}button{background:#F5F5F7;color:#000;font-weight:600}p{color:#9C9CA4;margin:0}</style>
-<form method="post" action="/login"><h1>Pick Six</h1><p>${wrong ? 'That code didn’t match.' : 'Enter the access code.'}</p><input name="code" type="password" autocomplete="current-password" autofocus aria-label="Access code"><button>Open</button></form>`);
+<form method="post" action="/login"><h1>Pick Six</h1><p>${wrong ? 'That code didn’t match.' : note || 'Enter the access code, or open the share link you were sent.'}</p><input name="code" type="password" autocomplete="current-password" autofocus aria-label="Access code"><button>Open</button></form>`);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -652,19 +671,35 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+  // A share link: /j/<token>. Opening it lets this phone in and remembers it, so a friend never types a code.
+  const jm = /^\/j\/([a-f0-9]{24})$/.exec(p);
+  if (jm && (M === 'GET' || M === 'HEAD')) {
+    const inv = Group.byToken(jm[1]);
+    if (!inv) return loginPage(res, false, 'That link has been turned off. Ask for a new one.');
+    const uid = ensureUid(req, res);
+    addCookie(res, `ps_key=${inv.token}; ${cookieOpts(req)}`);
+    Group.useInvite(inv.token, uid);
+    log('join:', inv.label);
+    res.writeHead(303, { location: '/' });
+    return res.end();
+  }
   if (p === '/api/health' && !authed(req)) return sendJSON(res, 200, { ok: true }); // uptime checks only; details need the code
   if (!authed(req) && !OPEN_PATHS.has(p)) {
     if (p.startsWith('/api/')) return sendJSON(res, 401, { error: 'Access code required' });
     return loginPage(res, false);
   }
   const uid = ensureUid(req, res);
+  const role = roleOf(req);
+  Group.note(uid, Group.byToken(cookieOf(req).ps_key || '')?.id || null);
   if (M !== 'GET' && M !== 'HEAD' && p.startsWith('/api/') && !writeBudget(uid)) return sendJSON(res, 429, { error: 'That\u2019s a lot of changes at once. Give it five minutes.' });
+  const ownerOnly = () => sendJSON(res, 403, { error: 'Only the person who runs this board can do that.' });
   try {
     if (p === '/api/stream') {
       res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' });
       res.write('retry: 2000\n\n');
-      res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot(uid))}\n\n`);
+      res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot(uid, role))}\n\n`);
       res.uid = uid;
+      res.role = role;
       clients.add(res);
       const ping = setInterval(() => res.write(': ping\n\n'), 15000);
       req.on('close', () => { clearInterval(ping); clients.delete(res); });
@@ -687,8 +722,57 @@ const server = http.createServer(async (req, res) => {
       }
       return sendJSON(res, 404, { error: 'That game is not loaded. Open its week first.' });
     }
-    // ---- your log: status, link another device, claim pre-accounts bets
-    if (p === '/api/me' && M === 'GET') return sendJSON(res, 200, { bets: Bets.list(uid).length, claimable: OWNER_CODE ? Bets.unowned() : 0 });
+    // ---- the group: share links, who's here, and what they've got running (the owner's side)
+    if (p === '/api/invites') {
+      if (role !== 'owner') return ownerOnly();
+      if (M === 'GET') return sendJSON(res, 200, { base: PUBLIC_URL || lanUrls()[0] || '', links: Group.invites() });
+      if (M === 'POST') {
+        const inv = Group.makeInvite((await readBody(req)).label);
+        log('share link made for', inv.label);
+        return sendJSON(res, 200, inv);
+      }
+    }
+    const im = /^\/api\/invites\/([a-f0-9]{12})$/.exec(p);
+    if (im && M === 'DELETE') {
+      if (role !== 'owner') return ownerOnly();
+      const gone = Group.revoke(im[1]);
+      if (gone) log('share link turned off');
+      return sendJSON(res, gone ? 200 : 404, { ok: gone });
+    }
+    if (p === '/api/group' && M === 'GET') {
+      if (role !== 'owner') return ownerOnly();
+      const links = Object.fromEntries(Group.invites().map((i) => [i.id, i.label]));
+      const by = Bets.byOwner();
+      // A summary per person plus whatever they have running: the size of this holds steady as the board grows.
+      return sendJSON(res, 200, {
+        people: Group.people(uid).map((P) => {
+          const bets = by.get(P.uid) || [];
+          const done = bets.filter((b) => b.status === 'won' || b.status === 'lost' || b.status === 'push');
+          return {
+            ...P,
+            via: links[P.via] || null,
+            n: bets.length,
+            won: done.filter((b) => b.status === 'won').length,
+            lost: done.filter((b) => b.status === 'lost').length,
+            net: done.reduce((t, b) => t + (b.net || 0), 0),
+            risk: done.reduce((t, b) => t + (b.stake || 0), 0),
+            open: bets.filter((b) => b.status === 'open').map(({ owner, ...b }) => b),
+          };
+        }),
+      });
+    }
+    const pm = /^\/api\/group\/([a-f0-9]{32})$/.exec(p);
+    if (pm && M === 'GET') {
+      if (role !== 'owner') return ownerOnly();
+      const P = Group.person(pm[1]);
+      if (!P) return sendJSON(res, 404, { error: 'Nobody by that id.' });
+      return sendJSON(res, 200, { name: P.name || '', bets: Bets.list(pm[1]).map(({ owner, ...b }) => b) });
+    }
+    // ---- your log: status, your name, link another device, claim pre-accounts bets
+    if (p === '/api/me' && M === 'GET') return sendJSON(res, 200, { role, name: Group.person(uid)?.name || '', bets: Bets.list(uid).length, claimable: OWNER_CODE ? Bets.unowned() : 0 });
+    if (p === '/api/me/name' && M === 'POST') {
+      try { return sendJSON(res, 200, { name: Group.setName(uid, (await readBody(req)).name) }); } catch (e) { return sendJSON(res, 400, { error: e.message }); }
+    }
     if (p === '/api/me/link' && M === 'POST') return sendJSON(res, 200, newLink(uid));
     if ((p === '/api/me/join' || p === '/api/me/claim') && M === 'POST') {
       const ip = clientIp(req);

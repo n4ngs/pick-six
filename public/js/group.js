@@ -1,0 +1,233 @@
+'use strict';
+/* Pick Six — the group: share links on the owner's side, a name and a plain explanation on a friend's.
+
+   A friend never types a code. The owner makes one link per person, sends it, and opening it lets that phone
+   in for good. Turning a link off locks out only the phones that used it.
+
+   Who sees what is stated, not implied: a guest's tickets are private from the other guests, and the person
+   who runs the board can see the group's. That sentence belongs on the first screen a guest sees and in their
+   Tools card — if this file changes, keep it there. */
+
+let grpLinks = null;    // { base, links: [] } from /api/invites
+let grpPeople = null;   // [{ uid, name, via, last, bets }] from /api/group
+
+const isOwner = () => S.me?.role !== 'guest';
+const ownerLabel = () => (S.me?.owner ? `${S.me.owner}` : 'the person who runs this board');
+const grpShareUrl = (t) => `${grpLinks?.base || location.origin}/j/${t}`;
+
+// ------------------------------------------------------------ the Group tab (the owner's own screen)
+/* One screen for the whole board: what the group has running right now, each person's log, and the links
+   that let them in. Everything here is read-only — the owner watches, they don't touch anyone's tickets. */
+function renderAdmin() {
+  const body = $('#adminBody');
+  if (!body) return;
+  if (!grpPeople && !grpLoading) { grpLoading = Promise.all([grpLoadGroup(), grpLoadLinks()]).finally(() => { grpLoading = null; }); }
+  const P = grpPeople || [];
+  const open = P.reduce((n, x) => n + x.open.length, 0);
+  const atRisk = P.reduce((n, x) => n + x.open.reduce((t, b) => t + (b.stake || 0), 0), 0);
+  const net = P.reduce((n, x) => n + (x.net || 0), 0);
+  const here = P.filter((x) => x.last && serverNow() - x.last < 15 * 60e3).length;
+  $('#adminSub').textContent = `${plural(P.length, 'person', 'people')} · ${plural(open, 'open ticket')}${here ? ` · ${here} here now` : ''}`;
+  body.innerHTML = `
+    <div class="grp-sum">
+      ${grpStat('On the board', String(P.length), here ? `${here} open right now` : 'nobody on right now')}
+      ${grpStat('Open tickets', String(open), open ? `${fmtMoney(atRisk)} at risk` : 'nothing running')}
+      ${grpStat('Group net', fmtMoney(net, true), 'settled bets only', net > 0 ? 'w' : net < 0 ? 'l' : '')}
+    </div>
+    <div class="sec-h" style="margin-top:28px"><h2>People</h2><span class="m">${P.length ? 'Tap a name for their log' : ''}</span></div>
+    <div class="card grp-list" id="grpPeople"></div>
+    <div class="sec-h" style="margin-top:28px"><h2>Share links</h2><span class="m">One per person</span></div>
+    <div class="card grp-share">
+      <p class="grp-lede">Make a link and send it. They tap it once and they're in — no code to type. Turn a link off and only the phones that used it are out.</p>
+      <div class="acct-join">
+        <label class="fld">Who's it for?<input class="inp" id="grpLabel" autocomplete="off" placeholder="e.g. Mike" maxlength="40"></label>
+        <button class="btn" type="button" data-grp-make>Make a link</button>
+      </div>
+      <div class="err" id="grpErr" role="alert"></div>
+      <div id="grpLinkList"></div>
+    </div>
+    <p class="grp-fine">Your own tickets stay in My bets. Nobody here can see them — guests only ever see their own.</p>`;
+  grpPaint();
+}
+const grpStat = (k, v, sub, cls = '') => `<div class="grp-stat"><span class="grp-stat-k">${esc(k)}</span><b class="${cls}">${esc(v)}</b><span class="grp-stat-s">${esc(sub)}</span></div>`;
+
+// A guest's own card: their name, and the truth about who can see what.
+function grpGuestCard() {
+  if (isOwner()) return '';
+  return `<div class="card tool grp" id="grpGuest">
+    <h3>You on this board</h3>
+    <p>Your bet log is yours — the other people here can't see it. Whoever runs the board can.</p>
+    <div class="acct-join">
+      <label class="fld">Your name here<input class="inp" id="grpName" autocomplete="off" maxlength="24" value="${esc(S.me?.name || '')}"></label>
+      <button class="btn ghost" type="button" data-grp-name>Save</button>
+    </div>
+    <div class="err" id="grpErr" role="alert"></div>
+  </div>`;
+}
+
+function grpPaint() {
+  const list = $('#grpLinkList');
+  if (list) {
+    const rows = (grpLinks?.links || []).map((l) => `<div class="grp-link">
+      <div class="grp-link-m"><b>${esc(l.label)}</b><span>${l.uses ? `opened ${plural(l.uses, 'time')}${l.last ? ` · last ${ago(l.last)}` : ''}` : 'not opened yet'}</span></div>
+      <div class="grp-link-go">
+        <button type="button" class="btn ghost sm" data-grp-copy="${esc(l.token)}">Copy link</button>
+        <button type="button" class="btn ghost sm" data-grp-qr="${esc(l.token)}">QR</button>
+        <button type="button" class="lg" data-grp-revoke="${esc(l.id)}" aria-label="${esc(`Turn off ${l.label}'s link`)}">Turn off</button>
+      </div></div>`).join('');
+    const html = rows || '<p class="grp-none">No links yet. Make one above and send it.</p>';
+    if (list.dataset.key !== html) { list.innerHTML = html; list.dataset.key = html; }
+  }
+  const box = $('#grpPeople');
+  if (box) {
+    const html = (grpPeople || []).length ? grpPeople.map(grpPersonHTML).join('') : '<p class="grp-none">Nobody has opened a link yet. Make one below and send it.</p>';
+    if (box.dataset.key !== html) { box.innerHTML = html; box.dataset.key = html; }
+  }
+}
+
+// One person, at a glance: what they have running and how they've done.
+function grpPersonHTML(P) {
+  const done = P.won + P.lost;
+  const roi = P.risk ? (P.net / P.risk) * 100 : null;
+  return `<button type="button" class="grp-p" data-grp-person="${esc(P.uid)}">
+    <span class="grp-p-n">${esc(P.name || 'Someone')}${P.via ? `<small>${esc(P.via)}${P.last ? ` · ${esc(ago(P.last))}` : ''}</small>` : ''}</span>
+    <span class="grp-p-o">${P.open.length ? `${P.open.length} open<small>${esc(fmtMoney(P.open.reduce((t, b) => t + (b.stake || 0), 0)))} at risk</small>` : '<small>nothing open</small>'}</span>
+    <span class="grp-p-r">${done ? `<b class="${P.net > 0 ? 'w' : P.net < 0 ? 'l' : ''}">${esc(fmtMoney(P.net, true))}</b><small>${P.won}-${P.lost}${roi != null ? ` · ${roi > 0 ? '+' : ''}${roi.toFixed(0)}%` : ''}</small>` : '<small>no results yet</small>'}</span>
+    <span class="grp-p-c">${ICON.chev}</span>
+  </button>`;
+}
+
+// Their full log, newest first. Read-only.
+async function grpPersonSheet(uid) {
+  const P = (grpPeople || []).find((x) => x.uid === uid);
+  S.sheet = { kind: 'person', uid };
+  $('#dlgBody').innerHTML = `<h2 id="dlgTitle">${esc(P?.name || 'Someone')}</h2><div class="empty"><b>Loading their log…</b></div>`;
+  showSheet('person', true);
+  let d = null;
+  try { d = await api(`/api/group/${uid}`); } catch (e) { $('#dlgBody').innerHTML = `<h2 id="dlgTitle">Couldn't load that</h2><p class="lede">${esc(e.message)}</p>`; return; }
+  if (S.sheet?.kind !== 'person' || S.sheet.uid !== uid) return;
+  const open = d.bets.filter((b) => b.status === 'open');
+  const done = d.bets.filter((b) => b.status !== 'open');
+  const row = (b) => `<div class="grp-b">
+    <span class="grp-b-m">${esc(grpLegs(b))}${b.book ? `<small>${esc(bookName(b.book))}</small>` : ''}</span>
+    <span class="grp-b-r">${esc(fmtMoney(b.stake))}${b.status === 'open' ? '<small>open</small>' : `<b class="${b.net > 0 ? 'w' : b.net < 0 ? 'l' : ''}">${esc(fmtMoney(b.net || 0, true))}</b><small>${esc(b.status)}</small>`}</span></div>`;
+  $('#dlgBody').innerHTML = `<h2 id="dlgTitle">${esc(d.name || P?.name || 'Someone')}</h2>
+    <p class="lede">${P?.via ? `Joined on ${esc(P.via)}'s link. ` : ''}${plural(d.bets.length, 'ticket')} in their log.</p>
+    ${open.length ? `<div class="sub-h" style="margin-top:20px">Running now</div><div class="card grp-blist">${open.map(row).join('')}</div>` : ''}
+    ${done.length ? `<div class="sub-h" style="margin-top:20px">Settled</div><div class="card grp-blist">${done.slice(0, 60).map(row).join('')}</div>` : ''}
+    ${d.bets.length ? '' : '<div class="card empty" style="margin-top:20px"><b>No tickets yet</b>They haven\'t logged a bet.</div>'}
+    <button class="btn ghost" type="button" data-closesheet>Done</button>`;
+}
+const GRP_MKT = { s: 'spread', t: 'total', ml: 'ML', h1s: '1H spread', h1t: '1H total', tt: 'team total' };
+function grpLegs(b) {
+  return b.legs.map((l) => `${l.team || (l.side === 'over' ? 'Over' : l.side === 'under' ? 'Under' : l.side || '')} ${l.line != null ? (l.mkt === 't' || l.mkt === 'h1t' ? fmtTot(l.line) : fmtPts(l.line)) : ''} ${fmtOdds(l.odds)}`.replace(/\s+/g, ' ').trim()).join(' + ') || GRP_MKT[b.legs[0]?.mkt] || 'Bet';
+}
+
+let grpLoading = null;
+async function grpLoadLinks() {
+  if (!grpLinks) grpLinks = { base: '', links: [] };
+  try { grpLinks = await api('/api/invites'); } catch { /* offline: the tab still draws */ }
+  grpPaint();
+}
+async function grpLoadGroup() {
+  if (!grpPeople) grpPeople = [];
+  try { grpPeople = (await api('/api/group')).people || []; } catch { /* offline */ }
+  if (S.tab === 'admin' && !S.sheet) renderAdmin(); else grpPaint();
+}
+// The group is re-read while the tab is open, so a friend's ticket shows up without a reload.
+setInterval(() => { if (S.tab === 'admin' && !S.sheet && document.visibilityState === 'visible') grpLoadGroup(); }, 20000);
+function grpErr(msg) { const e = $('#grpErr'); if (e) e.textContent = msg || ''; }
+
+// ------------------------------------------------------------ the first screen a guest sees
+function grpWelcome() {
+  S.sheet = { kind: 'welcome' };
+  $('#dlgBody').innerHTML = `<h2 id="dlgTitle">Welcome to the board</h2>
+    <p class="lede">${esc(S.me?.owner ? `${S.me.owner}'s` : 'This')} board: every book's number side by side, line moves as they happen, and a place to keep your tickets.</p>
+    <label class="fld" style="margin-top:20px">What should the board call you?<input class="inp" id="grpWName" autocomplete="off" maxlength="24" placeholder="First name"></label>
+    <div class="err" id="grpWErr" role="alert"></div>
+    <button class="btn" type="button" data-grp-wsave>Start</button>
+    <p class="grp-fine">Nothing you type here reaches a sportsbook — bets are placed at the book, in your own account.</p>`;
+  showSheet('welcome', true);
+  setTimeout(() => $('#grpWName')?.focus(), 80);
+}
+// Shown once, the first time a guest opens the app with no name saved.
+function grpMaybeWelcome() {
+  if (isOwner() || S.me?.named || S.sheet || store.get('welcomed', false)) return;
+  store.set('welcomed', true);
+  grpWelcome();
+}
+
+// ------------------------------------------------------------ clicks
+document.addEventListener('click', async (ev) => {
+  const t = ev.target.closest('[data-grp-make],[data-grp-copy],[data-grp-qr],[data-grp-revoke],[data-grp-person],[data-grp-name],[data-grp-wsave]');
+  if (!t) return;
+  const d = t.dataset;
+
+  if (d.grpMake !== undefined) {
+    grpErr('');
+    const label = String($('#grpLabel')?.value || '').trim();
+    try {
+      const inv = await api('/api/invites', { method: 'POST', body: JSON.stringify({ label }) });
+      $('#grpLabel').value = '';
+      grpLinks = null;
+      await grpLoadLinks();
+      grpCopy(grpShareUrl(inv.token), `Link for ${inv.label} copied. Send it to them.`);
+    } catch (e) { grpErr(e.message); }
+    return;
+  }
+  if (d.grpCopy) { grpCopy(grpShareUrl(d.grpCopy), 'Link copied.'); return; }
+  if (d.grpQr) { grpQrSheet(d.grpQr); return; }
+  if (d.grpRevoke) {
+    const label = grpLinks?.links.find((l) => l.id === d.grpRevoke)?.label || 'that link';
+    try {
+      await api(`/api/invites/${d.grpRevoke}`, { method: 'DELETE' });
+      grpLinks = null; grpPeople = null;
+      await Promise.all([grpLoadLinks(), grpLoadGroup()]);
+      if (S.tab === 'admin') renderAdmin();
+      toastText(`${label}'s link is off. Anyone using it is signed out.`);
+    } catch (e) { grpErr(e.message); }
+    return;
+  }
+  if (d.grpPerson) { grpPersonSheet(d.grpPerson); return; }
+  if (d.grpName !== undefined || d.grpWsave !== undefined) {
+    const welcome = d.grpWsave !== undefined;
+    const name = String($(welcome ? '#grpWName' : '#grpName')?.value || '').trim();
+    const err = (m) => { const e = $(welcome ? '#grpWErr' : '#grpErr'); if (e) e.textContent = m; };
+    if (!name) { err('Type a name the board can call you.'); return; }
+    err('');
+    try {
+      const r = await api('/api/me/name', { method: 'POST', body: JSON.stringify({ name }) });
+      S.me = { ...S.me, name: r.name, named: true };
+      if (welcome) { closeSheet(); toastText(`You're in, ${r.name}.`); } else toastText('Saved.');
+    } catch (e) { err(e.message); }
+  }
+});
+
+function grpCopy(url, msg) {
+  const done = () => toastText(msg);
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(done).catch(() => grpShowUrl(url));
+  else grpShowUrl(url);
+}
+// Clipboards are blocked in some browsers; show the link so it can be copied by hand.
+function grpShowUrl(url) {
+  S.sheet = { kind: 'link' };
+  $('#dlgBody').innerHTML = `<h2 id="dlgTitle">Share link</h2><p class="lede">Send this to one person. Anyone with it can open the board.</p>
+    <div class="url" style="user-select:all">${esc(url)}</div><button class="btn ghost" type="button" data-closesheet>Done</button>`;
+  showSheet('link', true);
+}
+
+function grpQrSheet(token) {
+  const url = grpShareUrl(token);
+  S.sheet = { kind: 'link' };
+  $('#dlgBody').innerHTML = `<h2 id="dlgTitle">Scan to join</h2><p class="lede">Point their camera at this. It opens the board on their phone and remembers it.</p>
+    <div class="qr" id="grpQr"></div><div class="url" style="user-select:all">${esc(url)}</div>
+    <button class="btn ghost" type="button" data-closesheet>Done</button>`;
+  showSheet('link', true);
+  const draw = () => { try { new QRCode($('#grpQr'), { text: url, width: 200, height: 200, colorDark: '#0B0B0D', colorLight: '#FFFFFF' }); } catch { $('#grpQr')?.remove(); } };
+  if (window.QRCode) return draw();
+  const sc = document.createElement('script');
+  sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+  sc.onload = draw;
+  sc.onerror = () => $('#grpQr')?.remove();
+  document.head.appendChild(sc);
+}

@@ -106,7 +106,8 @@ starts at the true open.
 | `PIN_MS` | `600000` | How often Pinnacle is checked (minimum 300000) |
 | `SOURCES_OFF` | | Comma list of sources to skip: `vsin`, `pinnacle` |
 | `DATA_DIR` | `./data` | Where bets, counter numbers and line history are saved |
-| `ACCESS_CODE` | | Require a code to open the app. Set this before putting it on the internet |
+| `ACCESS_CODE` | | The owner's code. Set this before putting it on the internet; friends get share links instead |
+| `OWNER_NAME` | | Your first name, for the welcome a guest reads |
 
 ### Putting it online (Railway or similar)
 
@@ -123,11 +124,20 @@ The login cookie stays valid until the code changes, so changing `ACCESS_CODE` s
 
 ### Sharing it with friends
 
-One access code lets everyone in, and each device still gets its own private log. A random id is set in a
-secure cookie on the first visit; bets, counter numbers and CSV exports are scoped to that id, so nobody
-reads or moves anybody else's. The board itself — feeds, line history, closing lines — is shared, which is
-the point. Changes are capped at 120 per device per five minutes, well above real use, so one stuck script
-can't churn the files. To read one log from a second device, use the link code in Tools.
+You hold the access code; everyone else gets a link. In the **Group** tab, make a link (one per person, or one
+for a whole crew), send it, and opening it lets that phone in for good — nothing to type. Turning a link off
+locks out exactly the phones that used it.
+
+- **The code makes you the owner.** It's the only way to the Group tab. If you've ever shared the code itself,
+  change `ACCESS_CODE` and hand out links instead.
+- **A link makes a guest.** Guests see the whole board and their own log: bets, counter numbers and CSV are
+  scoped to a random device id in a secure cookie, so no guest sees another guest's, or yours.
+- **The Group tab** shows each person's open tickets, record and net, and their full log on tap. It's
+  read-only. The guest's Tools card says in one line that whoever runs the board can see their tickets —
+  leave it there; people are entitled to know what happens to their own records.
+- `OWNER_NAME` (optional) puts your name on the welcome a guest sees ("Chris's board").
+- Changes are capped at 120 per device per five minutes, well above real use, so one stuck script can't churn
+  the files. To read one log from two of your own devices, use the link code in Tools.
 
 ## Files
 
@@ -143,6 +153,7 @@ lib/weather.js     Kickoff weather (Open-Meteo)
 lib/margins.js     Key numbers from last season's finals
 lib/books.js       The list of sportsbooks, where each one's numbers come from, and its site and app
 lib/manual.js      Counter numbers, kept per device
+lib/group.js       Share links and who's on the board
 lib/util.js        Fetch with backoff, dates, files, team-name matching
 public/            The app: index.html, app.css, js/core, live, views, sheets, boot
 railway.json       Railway deploy settings

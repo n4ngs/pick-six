@@ -53,6 +53,7 @@ const S = {
   books: [],              // [{ key, name, short, vegas, sharp, site, ios, feed }]
   mine: {},               // gid -> book -> number you typed in at a window: yours, on this device only
   bets: [],
+  me: { role: 'owner', name: '', named: true, owner: '', shared: false },  // who you are on this board (server sets it)
   moves: [],              // recent line moves across tracked weeks, newest first
   keys: null,             // last season's margin/total distribution
   tab: 'live',

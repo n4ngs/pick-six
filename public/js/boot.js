@@ -4,9 +4,12 @@
 const pendingDeletes = new Set(); // bets hidden while their Undo toast is showing
 
 // ------------------------------------------------------------ tabs & routes
-const TABS = ['live', 'board', 'bets', 'tools'];
+const TABS = ['live', 'board', 'bets', 'tools', 'admin'];
+// The Group tab belongs to whoever runs the board. A guest never sees it, and can't reach it by typing #admin.
+const canAdmin = () => S.me?.role !== 'guest' && !!S.me?.shared;
 function setTab(tab, push = true) {
   if (!TABS.includes(tab)) tab = 'live';
+  if (tab === 'admin' && !canAdmin()) tab = 'live';
   S.tab = tab;
   for (const v of $$('.view')) v.classList.toggle('on', v.dataset.view === tab);
   for (const a of $$('[data-tab]')) a.classList.toggle('on', a.dataset.tab === tab && !a.classList.contains('brand'));

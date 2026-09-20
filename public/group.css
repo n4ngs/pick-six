@@ -1,0 +1,57 @@
+/* The group: share links and who's on the board (group.js). Same tool-card system as the rest of Tools. */
+.grp .grp-none{margin:var(--s2) 0 0;font-size:13px;color:var(--ink-3)}
+.grp-link{display:grid;grid-template-columns:1fr auto;gap:8px 12px;align-items:center;padding:12px 0}
+.grp-link + .grp-link{border-top:1px solid var(--line)}
+.grp-link-m b{display:block;font-size:15px;font-weight:600}
+.grp-link-m span{font-size:12px;color:var(--ink-3)}
+.grp-link-go{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end}
+.grp-link-go .lg{min-height:36px;padding:0 10px;font-size:13px;color:var(--ink-2)}
+.grp-p + .grp-p{border-top:1px solid var(--line)}
+.grp-p-h{display:grid;grid-template-columns:1fr auto 16px;gap:10px;align-items:center;width:100%;min-height:52px;text-align:left}
+.grp-p-n{font-size:15px;font-weight:600}
+.grp-p-n small{display:block;font-size:11px;font-weight:500;color:var(--ink-3)}
+.grp-p-s{font-size:13px;color:var(--ink-2);text-align:right}
+.grp-p-s .w{color:var(--win)}
+.grp-p-s .l{color:var(--ink-2)}
+.grp-p-c{display:grid;place-items:center;color:var(--ink-3)}
+.grp-p-c svg{width:12px;height:12px;transition:transform .15s}
+.grp-p-h[aria-expanded="true"] .grp-p-c svg{transform:rotate(90deg)}
+.grp-p-b{padding:4px 0 12px}
+.grp-b{display:flex;justify-content:space-between;gap:12px;padding:7px 0;font-size:13px;color:var(--ink-2)}
+.grp-b-m{color:var(--ink)}
+.grp-seen{margin:8px 0 0;font-size:12px;color:var(--ink-3)}
+@media (prefers-reduced-motion:reduce){.grp-p-c svg{transition:none}}
+.grp-fine{margin:16px 0 0;font-size:12px;line-height:1.45;color:var(--ink-3)}
+
+/* The Group tab: a summary strip, the people, and the links. */
+.grp-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:var(--s2)}
+.grp-stat{padding:14px var(--s2);border-radius:var(--r-lg);background:var(--surface)}
+.grp-stat-k{display:block;font-size:11px;font-weight:600;color:var(--ink-3);letter-spacing:.02em}
+.grp-stat b{display:block;margin:4px 0 2px;font-size:26px;font-weight:650;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.grp-stat b.w{color:var(--win)}
+.grp-stat-s{font-size:12px;color:var(--ink-3)}
+.grp-list{padding:4px 0}
+.grp-share{padding:var(--s2)}
+.grp-lede{margin:0 0 4px;font-size:13px;color:var(--ink-2);line-height:1.45}
+.grp-p{display:grid;grid-template-columns:1fr auto auto 16px;gap:12px;align-items:center;width:100%;min-height:60px;padding:10px var(--s2);text-align:left}
+.grp-p + .grp-p{border-top:1px solid var(--line)}
+.grp-p small{display:block;font-size:11px;font-weight:500;color:var(--ink-3);margin-top:2px}
+.grp-p-n{font-size:15px;font-weight:600}
+.grp-p-o,.grp-p-r{font-size:13px;color:var(--ink-2);text-align:right;font-variant-numeric:tabular-nums}
+.grp-p-r b{font-weight:650;color:var(--ink)}
+.grp-p-r b.w{color:var(--win)}
+.grp-p-c{display:grid;place-items:center;color:var(--ink-3)}
+.grp-p-c svg{width:12px;height:12px}
+.grp-blist{padding:4px 0;margin-top:8px}
+.grp-b{display:grid;grid-template-columns:1fr auto;gap:12px;padding:10px var(--s2);font-size:14px}
+.grp-b + .grp-b{border-top:1px solid var(--line)}
+.grp-b small{display:block;font-size:11px;color:var(--ink-3);margin-top:2px}
+.grp-b-r{text-align:right;font-variant-numeric:tabular-nums}
+.grp-b-r b.w{color:var(--win)}
+@media (max-width:520px){
+  .grp-sum{grid-template-columns:1fr 1fr}
+  .grp-sum .grp-stat:first-child{grid-column:1 / -1}
+  .grp-p{grid-template-columns:1fr auto 14px;row-gap:2px}
+  .grp-p-o{grid-column:2}
+  .grp-p-r{grid-column:2;grid-row:2}
+}

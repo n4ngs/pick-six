@@ -527,8 +527,10 @@ textarea.inp{height:72px;padding:12px 14px;font-size:15px;font-weight:500;resize
 .empty b{display:block;color:var(--ink);font-size:17px;font-weight:600;margin-bottom:4px}
 
 /* ---------- tab bar ---------- */
-.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--glass);-webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(4,1fr);padding:8px 8px max(14px,calc(env(safe-area-inset-bottom) + 4px))}
-.tabbar a{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:500;color:var(--ink-3);padding:4px 0}
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--glass);-webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4);border-top:1px solid var(--line);display:grid;grid-auto-flow:column;grid-auto-columns:1fr;padding:8px 8px max(14px,calc(env(safe-area-inset-bottom) + 4px))}
+.tabbar a{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:500;color:var(--ink-3);padding:4px 0;white-space:nowrap}
+.tabbar:has(a:nth-child(5):not([hidden])) a{font-size:10px}
+.tabbar:has(a:nth-child(5):not([hidden])) a svg{width:22px;height:22px}
 .tabbar a svg{width:24px;height:24px}
 .tabbar a.on{color:var(--ink)}
 .badge{position:absolute;top:0;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--accent);color:var(--on-accent);font-size:10px;font-weight:600;display:grid;place-items:center}

@@ -13,6 +13,7 @@ function renderAll() {
   if (S.tab === 'board') renderBoard();
   if (S.tab === 'bets') renderBets();
   if (S.tab === 'tools') renderTools();
+  if (S.tab === 'admin' && typeof renderAdmin === 'function') renderAdmin();
   renderFoot();
   if (S.sheet) refreshSheet();
 }
@@ -26,6 +27,9 @@ function renderPill() {
   pill.querySelector('.dot').classList.toggle('pulse', S.connected && n > 0);
 }
 function renderNav() {
+  // The Group tab appears only for whoever runs the board, and only when the board is shared at all.
+  const admin = typeof canAdmin === 'function' && canAdmin();
+  for (const id of ['#adminTab', '#adminNav']) { const el = $(id); if (el) el.hidden = !admin; }
   const open = S.bets.filter((b) => b.status === 'open');
   const live = open.filter((b) => b.legs.some((l) => isLive(gameById(l.gid)))).length;
   for (const id of ['#betBadge', '#betBadgeD']) {
@@ -636,6 +640,7 @@ function renderTools() {
     <div class="card tool"><h3>Hedge</h3><p>Lock in profit (or cut a loss) by betting the other side. Works for a live sweat or a parlay's last leg.</p>
       <div class="fgrid"><label class="fld">Original payout if it wins<input class="inp" id="hPay" inputmode="decimal" value="500"></label><label class="fld">Original stake<input class="inp" id="hStake" inputmode="decimal" value="100"></label><label class="fld full">Hedge odds on the other side<input class="inp" id="hOdds" value="-150"></label></div>
       <div class="out" id="hOut"></div></div>
+    ${typeof grpGuestCard === 'function' ? grpGuestCard() : ''}
     ${acctCard()}
     ${kellyCard()}
     ${typeof limCard === 'function' ? limCard() : ''}
@@ -653,6 +658,7 @@ function renderTools() {
 function updateTools() {
   kellyPaint();
   acctPaint();
+  if (typeof grpPaint === 'function') grpPaint();
   if (typeof limPaint === 'function') limPaint();
   const n = (id) => Number(String($(id)?.value || '').replace(/[^\d.+-]/g, ''));
   const odds = n('#tOdds'), stake = n('#tStake');
@@ -702,7 +708,7 @@ function updateTools() {
 
 // ------------------------------------------------------------ footer + parlay tray
 function renderFoot() {
-  $('#foot').innerHTML = `Lines from Action Network, VSiN, Pinnacle and ESPN. Scores from ESPN, weather from Open-Meteo.<br>Numbers can lag the window by a few minutes. Check the ticket before you bet. 21+. Gambling problem? Call 1-800-GAMBLER.`;
+  $('#foot').innerHTML = `Odds rechecked every few seconds while games are on: the Las Vegas windows through VSiN, the market through Action Network and Pinnacle. Scores from ESPN, kickoff weather from Open-Meteo.<br>Numbers can lag the window by a few minutes. Check the ticket before you bet. 21+. Gambling problem? Call 1-800-GAMBLER.`;
 }
 function renderTray() {
   const saved = JSON.stringify(S.parlay);

@@ -33,6 +33,7 @@
 <link rel="stylesheet" href="share.css">
 <link rel="stylesheet" href="limits.css">
 <link rel="stylesheet" href="books.css">
+<link rel="stylesheet" href="group.css">
 </head>
 <body>
 <div class="wrap" id="app">
@@ -43,6 +44,7 @@
       <a data-tab="board" href="#board">Board</a>
       <a data-tab="bets" href="#bets">My bets<span class="badge" id="betBadgeD" hidden></span></a>
       <a data-tab="tools" href="#tools">Tools</a>
+      <a data-tab="admin" href="#admin" id="adminNav" hidden>Group</a>
     </nav>
     <div class="top-actions">
       <button class="pill phone-btn" id="phoneBtn" type="button">Open on iPhone</button>
@@ -129,6 +131,11 @@
       <div class="view-h"><div><h1>Tools</h1><p>Calculators, key numbers, and where every line comes from.</p></div></div>
       <div id="toolsBody"></div>
     </section>
+    <!-- ============ GROUP (the owner's board only) ============ -->
+    <section class="view" id="view-admin" data-view="admin" aria-label="Group">
+      <div class="view-h"><div><h1>The group</h1><p id="adminSub">Everyone on your board, their tickets, and the links that let them in.</p></div></div>
+      <div id="adminBody"></div>
+    </section>
   </main>
 
   <footer class="foot" id="foot"></footer>
@@ -139,6 +146,7 @@
   <a data-tab="board" href="#board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18l5-6 4 3 7-9"/><path d="M15 6h5v5"/></svg>Board</a>
   <a data-tab="bets" href="#bets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M5 4h14v16l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 9h6M9 13h4" stroke-linecap="round"/></svg>My bets<span class="badge" id="betBadge" hidden></span></a>
   <a data-tab="tools" href="#tools"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4.5" y="3.5" width="15" height="17" rx="3"/><path d="M8 7.5h8M8.5 12h1M11.5 12h1M14.5 12h1M8.5 15.5h1M11.5 15.5h1M14.5 15.5h1" stroke-linecap="round"/></svg>Tools</a>
+  <a data-tab="admin" href="#admin" id="adminTab" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 7.5a2.8 2.8 0 0 1 0 5.4M17.5 19a5 5 0 0 0-2-4"/></svg>Group</a>
 </nav>
 
 <div class="tray" id="tray" hidden></div>
@@ -157,6 +165,7 @@
 <script src="js/views.js"></script>
 <script src="js/sheets.js"></script>
 <script src="js/account.js"></script>
+<script src="js/group.js"></script>
 <script src="js/kelly.js"></script>
 <script src="js/hitlist.js"></script>
 <script src="js/clv.js"></script>
