@@ -214,7 +214,10 @@ function edgePrice(g, mkt, side, line, odds, book = null) {
 function edgeScoreGame(g) {
   const out = [];
   if (!g || !isPre(g) || g.state === 'off') return out;
-  const books = visibleBooks().map((b) => b.key);
+  // The price has to be one you can actually take. Pinnacle, DraftKings and FanDuel don't book Nevada
+  // bets, so they stay what lib/books.js calls them — reference. They set the fair number; they never
+  // appear as the play.
+  const books = visibleBooks().filter((b) => b.vegas).map((b) => b.key);
   for (const mkt of EDGE_MKTS) {
     const F = edgeFair(g, mkt);
     if (!F) continue;
