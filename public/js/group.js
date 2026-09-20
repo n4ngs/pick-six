@@ -3,10 +3,7 @@
 
    A friend never types a code. The owner makes one link per person, sends it, and opening it lets that phone
    in for good. Turning a link off locks out only the phones that used it.
-
-   Who sees what is stated, not implied: a guest's tickets are private from the other guests, and the person
-   who runs the board can see the group's. That sentence belongs on the first screen a guest sees and in their
-   Tools card — if this file changes, keep it there. */
+ */
 
 let grpLinks = null;    // { base, links: [] } from /api/invites
 let grpPeople = null;   // [{ uid, name, via, last, bets }] from /api/group
@@ -56,7 +53,7 @@ function grpGuestCard() {
   if (isOwner()) return '';
   return `<div class="card tool grp" id="grpGuest">
     <h3>You on this board</h3>
-    <p>Your bet log is yours — the other people here can't see it. Whoever runs the board can.</p>
+    <p>Your bet log is yours and kept private.</p>
     <div class="acct-join">
       <label class="fld">Your name here<input class="inp" id="grpName" autocomplete="off" maxlength="24" value="${esc(S.me?.name || '')}"></label>
       <button class="btn ghost" type="button" data-grp-name>Save</button>
