@@ -730,7 +730,7 @@ const server = http.createServer(async (req, res) => {
   const jm = /^\/j\/([a-f0-9]{24})$/.exec(p);
   if (jm && (M === 'GET' || M === 'HEAD')) {
     const inv = Group.byToken(jm[1]);
-    if (!inv) return loginPage(res, false, 'That link has been turned off. Ask for a new one.');
+    if (!inv) return gatePage(res, { mode: 'revoked' });
     // Your own link, opened on the device that holds the code: you'd stay the owner and see no difference, and
     // the link would count a use that wasn't a friend. Say so instead.
     if (roleOf(req) === 'owner') {
