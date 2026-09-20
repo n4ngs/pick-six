@@ -570,7 +570,18 @@ function readBody(req) {
 const crypto = require('node:crypto');
 const hashCode = (c) => crypto.createHash('sha256').update(`hl:${c}`).digest('hex');
 const codeHash = ACCESS_CODE ? hashCode(ACCESS_CODE) : '';
-const sameHash = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+// What an owner's installed icon carries in its start_url so a Home Screen launch is still the owner. Derived
+// from the code, never stored; changing ACCESS_CODE invalidates it along with everything else.
+const ownerKey = ACCESS_CODE ? crypto.createHash('sha256').update(`launch:${codeHash}`).digest('hex').slice(0, 32) : '';
+const KEY_RE = /^[a-f0-9]{32}$/;
+const TOK_RE = /^[a-f0-9]{24}$/;
+const sameHash = (a, b) => {
+  // Compare BYTE length, not JS string length: a 32-character multi-byte string is 64 bytes, and handing
+  // timingSafeEqual two different-sized buffers throws. Untrusted input reaches here, so it must not throw.
+  const A = Buffer.from(String(a ?? ''), 'utf8');
+  const B = Buffer.from(String(b ?? ''), 'utf8');
+  return A.length === B.length && A.length > 0 && crypto.timingSafeEqual(A, B);
+};
 // Five wrong codes from one address in 15 minutes locks that address out for the rest of the window,
 // and 100 wrong codes from anywhere locks the login for everyone (a backstop against address rotation).
 const LOGIN_WINDOW = 15 * 60e3;
@@ -646,10 +657,54 @@ function newLink(uid) {
 }
 const OPEN_PATHS = new Set(['/manifest.webmanifest', '/icons/icon.svg', '/icons/apple-touch-icon.png', '/icons/icon-192.png', '/icons/icon-512.png']);
 function loginPage(res, wrong, note) {
-  res.writeHead(wrong ? 401 : 200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-  res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pick Six</title>
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#000;color:#F5F5F7;font:16px/1.4 ui-sans-serif,system-ui}form{display:grid;gap:12px;width:min(320px,90vw)}h1{font-size:28px;margin:0 0 8px;letter-spacing:-.03em}input,button{height:48px;border-radius:14px;border:0;font:inherit;padding:0 14px}input{background:#161618;color:#F5F5F7}button{background:#F5F5F7;color:#000;font-weight:600}p{color:#9C9CA4;margin:0}</style>
-<form method="post" action="/login"><h1>Pick Six</h1><p>${wrong ? 'That code didn’t match.' : note || 'Enter the access code, or open the share link you were sent.'}</p><input name="code" type="password" autocomplete="current-password" autofocus aria-label="Access code"><button>Open</button></form>`);
+  return gatePage(res, { mode: wrong ? 'wrong' : 'signedout', note });
+}
+// The one screen someone lands on without access. A guest has no code and never will, so the code box is not
+// the offer here — getting back in with the link they already have is. Three modes, one layout.
+function gatePage(res, { mode = 'signedout', note = '' } = {}) {
+  const who = OWNER_NAME ? `${OWNER_NAME}'s board` : 'This board';
+  const H = {
+    signedout: ['Tap your link again', `${who} doesn't recognise this phone. Open the link you were texted and you're straight back in \u2014 there is nothing to type.`],
+    revoked: ['This link was turned off', OWNER_NAME ? `Ask ${OWNER_NAME} for a new one.` : 'Ask for a new one.'],
+    wrong: ['Pick Six', 'That code didn\u2019t match.'],
+  }[mode] || ['Pick Six', note || ''];
+  res.writeHead(mode === 'wrong' ? 401 : 200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="same-origin"><title>Pick Six</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#000;color:#F5F5F7;font:16px/1.45 ui-sans-serif,system-ui;padding:24px}.w{width:min(340px,90vw);text-align:center}h1{font-size:26px;margin:0 0 10px;letter-spacing:-.03em}p{color:#9C9CA4;margin:0 0 22px}button,input{height:48px;border-radius:14px;border:0;font:inherit;padding:0 14px;width:100%{}}button{background:#F5F5F7;color:#000;font-weight:600;cursor:pointer}input{background:#161618;color:#F5F5F7;margin-bottom:10px}.alt{margin-top:18px;font-size:14px;color:#6E6E76}.alt a{color:#9C9CA4}#code,#paste{display:none;margin-top:12px}.err{color:#FF6B6B;font-size:14px;min-height:18px;margin-top:8px}</style>
+<div class="w"><h1>${H[0]}</h1><p>${H[1]}</p>
+<button id="b">Paste my link</button>
+<div id="paste"><input id="t" placeholder="Paste the link here" autocomplete="off"><button id="go">Open it</button></div>
+<div class="err" id="e"></div>
+<div class="alt"><a href="#" id="c">I have an access code</a></div>
+<form id="code" method="post" action="/login"><input name="code" type="password" autocomplete="current-password" aria-label="Access code"><button>Open</button></form></div>
+<script>
+var TOK=/([a-f0-9]{24})/;
+function go(v){var m=TOK.exec(String(v||''));if(m){location.href='/j/'+m[1];return true}return false}
+document.getElementById('b').onclick=function(){
+  var e=document.getElementById('e');e.textContent='';
+  try{navigator.clipboard.readText().then(function(v){if(!go(v)){document.getElementById('paste').style.display='block';e.textContent='That clipboard has no link in it.'}},show)}catch(x){show()}
+  function show(){document.getElementById('paste').style.display='block';document.getElementById('t').focus()}
+};
+document.getElementById('go').onclick=function(){if(!go(document.getElementById('t').value))document.getElementById('e').textContent='That does not look like your link.'};
+document.getElementById('c').onclick=function(ev){ev.preventDefault();document.getElementById('code').style.display='grid'};
+try{
+  var m={mode};
+  if(m==='revoked'){localStorage.removeItem('ps.key')}
+  else if(!sessionStorage.getItem('ps.heal')){
+    var c=localStorage.getItem('ps.ok'),k=localStorage.getItem('ps.key');
+    if(c&&/^[a-f0-9]{32}$/.test(c)){sessionStorage.setItem('ps.heal','1');location.replace('/?c='+c)}
+    else if(k&&/^[a-f0-9]{24}$/.test(k)){sessionStorage.setItem('ps.heal','1');location.replace('/?k='+k)}
+  }
+}catch(x){}
+</script>`.replace('{mode}', JSON.stringify(mode)));
+}
+// public/index.html, read once and re-read when it changes on disk.
+let idxCache = { mtime: 0, html: '' };
+function indexHTML() {
+  const f = path.join(PUBLIC, 'index.html');
+  const m = fs.statSync(f).mtimeMs;
+  if (m !== idxCache.mtime) idxCache = { mtime: m, html: fs.readFileSync(f, 'utf8') };
+  return idxCache.html;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -691,6 +746,62 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(303, { location: '/' });
     return res.end();
   }
+  // ---- an installed icon: its manifest, and its launch ----------------------
+  // The manifest an installed icon is built from. The token is in the PATH, not a cookie, because a manifest is
+  // fetched with credentials omitted \u2014 a cookie-reading manifest would quietly be served the gate page as HTML
+  // and the phone would install the defaults without a word. Sits above the gate, which is what makes it open.
+  const mm = /^\/m\/([kc])\/([a-f0-9]{24,32})\.webmanifest$/.exec(p);
+  if (mm && (M === 'GET' || M === 'HEAD')) {
+    let base;
+    try { base = JSON.parse(fs.readFileSync(path.join(PUBLIC, 'manifest.webmanifest'), 'utf8')); }
+    catch { return sendJSON(res, 500, { error: 'manifest' }); }
+    base.start_url = `/?${mm[1]}=${mm[2]}`;
+    base.scope = '/';
+    // Icon srcs resolve against the MANIFEST's url, not the origin. Served two segments deep, a relative
+    // "icons/icon-192.png" would resolve to /m/k/icons/... and 404, and Android would install a bare shortcut
+    // with no icon instead of an app. Make them absolute.
+    if (Array.isArray(base.icons)) base.icons = base.icons.map((i) => ({ ...i, src: String(i.src || '').replace(/^(?!\/|https?:)/, '/') }));
+    res.writeHead(200, { 'content-type': 'application/manifest+json; charset=utf-8', 'cache-control': 'private, no-store' });
+    return res.end(M === 'HEAD' ? '' : JSON.stringify(base));
+  }
+  if (p.startsWith('/m/') && (M === 'GET' || M === 'HEAD')) { res.writeHead(404); return res.end(); }
+
+  // An installed icon launching. On iOS a Home Screen web app has its own cookie jar, so the cookie set when the
+  // link was tapped in Safari may simply not be here. Re-assert it from the token baked into start_url, every
+  // launch, and re-check it against the live invite list so revoking still locks someone out instantly.
+  if (ACCESS_CODE && (p === '/' || p === '/index.html') && M === 'GET') {
+    const c = url.searchParams.get('c') || '';
+    const k = url.searchParams.get('k') || '';
+    // Shape-check before any comparison: this is unauthenticated input, and it used to reach a byte-length
+    // comparison that threw and took the process down.
+    if (KEY_RE.test(c) && ownerKey) {
+      const ip = clientIp(req);
+      // Same throttle as /login. A launch key is an owner credential; it must not be a way around the lockout.
+      if (lockedOut(ip)) { res.writeHead(429, { 'content-type': 'text/plain; charset=utf-8', 'retry-after': '900' }); return res.end('Too many tries. Wait 15 minutes.'); }
+      if (sameHash(c, ownerKey)) {
+        failures.delete(ip);
+        addCookie(res, `ps_code=${codeHash}; ${cookieOpts(req)}`);
+        req.headers.cookie = `${req.headers.cookie ? req.headers.cookie + '; ' : ''}ps_code=${codeHash}`;
+      } else {
+        failures.get(ip).push(Date.now()); allFailures.push(Date.now());
+        log('launch: wrong owner key from', ip);
+      }
+    } else if (TOK_RE.test(k)) {
+      const inv = Group.byToken(k);
+      if (inv) {
+        const who = ensureUid(req, res);
+        addCookie(res, `ps_key=${inv.token}; ${cookieOpts(req)}`);
+        req.headers.cookie = `${req.headers.cookie ? req.headers.cookie + '; ' : ''}ps_key=${inv.token}`;
+        Group.touchInvite(inv.token, who);
+      } else if (!authed(req)) {
+        // Dead token AND no other way in: say the link was turned off. If they still hold a live cookie from a
+        // newer link, fall through silently rather than locking them out of access they legitimately have \u2014
+        // rotating a link must not brick the icon of someone already back in on the new one.
+        return gatePage(res, { mode: 'revoked' });
+      }
+    }
+  }
+
   if (p === '/api/health' && !authed(req)) return sendJSON(res, 200, { ok: true }); // uptime checks only; details need the code
   if (!authed(req) && !OPEN_PATHS.has(p)) {
     if (p.startsWith('/api/')) return sendJSON(res, 401, { error: 'Access code required' });
@@ -698,6 +809,26 @@ const server = http.createServer(async (req, res) => {
   }
   const uid = ensureUid(req, res);
   const role = roleOf(req);
+  // The page carries the manifest that matches who is holding it, so Add to Home Screen bakes a start_url that
+  // re-authenticates on every launch instead of one that depends on a cookie surviving.
+  if ((p === '/' || p === '/index.html') && M === 'GET') {
+    let link = '<link rel="manifest" href="/manifest.webmanifest">', stash = '';
+    if (ACCESS_CODE && role === 'owner') {
+      link = `<link rel="manifest" href="/m/c/${ownerKey}.webmanifest">`;
+      stash = `<script>try{localStorage.setItem('ps.ok',${JSON.stringify(ownerKey)});sessionStorage.removeItem('ps.heal')}catch(e){}</script>`;
+    } else if (ACCESS_CODE && role === 'guest') {
+      const t = cookieOf(req).ps_key || '';
+      if (TOK_RE.test(t)) {
+        link = `<link rel="manifest" href="/m/k/${t}.webmanifest">`;
+        stash = `<script>try{localStorage.setItem('ps.key',${JSON.stringify(t)});sessionStorage.removeItem('ps.heal')}catch(e){}</script>`;
+      }
+    }
+    // Take the credential back out of the address bar as soon as it has done its job.
+    stash += '<script>try{if(location.search)history.replaceState(null,"",location.pathname)}catch(e){}</script>';
+    const html = indexHTML().replace('<link rel="manifest" href="manifest.webmanifest">', link + stash);
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store', vary: 'cookie' });
+    return res.end(html);
+  }
   Group.note(uid, Group.byToken(cookieOf(req).ps_key || '')?.id || null);
   if (M !== 'GET' && M !== 'HEAD' && p.startsWith('/api/') && !writeBudget(uid)) return sendJSON(res, 429, { error: 'That\u2019s a lot of changes at once. Give it five minutes.' });
   const ownerOnly = () => sendJSON(res, 403, { error: 'Only the person who runs this board can do that.' });
