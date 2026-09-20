@@ -5,10 +5,42 @@
 let raf = 0;
 function invalidate() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderAll(); }); }
 
+// ------------------------------------------------------------ numbers you typed in at a window
+/* The server sends what the feeds report, the same board for everyone. Numbers typed in at a counter belong
+   to the device that typed them, so they're fetched separately and merged in here — one person at a window
+   never moves a friend's screen. A typed number holds until that book's feed reports something newer. */
+async function loadMine() {
+  try { S.mine = (await (await fetch('/api/manual')).json()) || {}; } catch { /* offline: the board still works */ }
+}
+function withMine(g) {
+  const feed = g.feed || g.books || {};
+  const mine = S.mine[g.id];
+  const out = { ...g, feed };
+  if (!mine || !Object.keys(mine).length) { out.books = feed; return out; }
+  const books = { ...feed };
+  for (const [k, L] of Object.entries(mine)) {
+    if (!(books[k]?.seen > L.at)) books[k] = { ...L, m: true, src: 'you', seen: L.at };
+  }
+  out.books = books;
+  return out;
+}
+// Re-merge one game everywhere it's shown, after you save or remove a number.
+function repaintMine(gid) {
+  for (const w of S.weeks.values()) { const g = w.games.get(gid); if (g) w.games.set(gid, withMine(g)); }
+  if (S.game?.game?.id === gid) S.game.game = gameById(gid);
+  invalidate();
+}
+// Your numbers can land after the first board does; fold them into whatever is already on screen.
+function remergeMine() {
+  for (const w of S.weeks.values()) for (const [id, g] of w.games) w.games.set(id, withMine(g));
+  if (S.game?.game) S.game.game = gameById(S.game.game.id) || S.game.game;
+  invalidate();
+}
+
 // ------------------------------------------------------------ weeks
 function putWeek(w, meta = {}) {
   const prev = S.weeks.get(w.id);
-  const games = new Map(w.games.map((g) => [g.id, g]));
+  const games = new Map(w.games.map((g) => [g.id, withMine(g)]));
   S.weeks.set(w.id, { meta: { id: w.id, season: w.season, type: w.type, week: w.week, label: w.label, detail: w.detail, ...meta }, games, moves: w.moves || [] });
   if (prev) for (const g of w.games) notePrices(prev.games.get(g.id), g);
 }
@@ -92,11 +124,12 @@ function connect() {
     const w = S.weeks.get(g.wk);
     if (!w) return;
     const prev = w.games.get(g.id);
-    notePrices(prev, g);
-    w.games.set(g.id, g);
-    if (prev) watchGame(prev, g);
-    if (S.game?.game?.id === g.id) S.game.game = g;
-    document.dispatchEvent(new CustomEvent('hl:game', { detail: { prev, g } }));
+    const cur = withMine(g);
+    notePrices(prev, cur);
+    w.games.set(cur.id, cur);
+    if (prev) watchGame(prev, cur);
+    if (S.game?.game?.id === cur.id) S.game.game = cur;
+    document.dispatchEvent(new CustomEvent('hl:game', { detail: { prev, g: cur } }));
     invalidate();
   });
   on('move', (m) => {

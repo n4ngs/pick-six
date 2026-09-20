@@ -1,0 +1,15 @@
+/* Where to bet: the Nevada books, with the two ways in. Links only — no login ever lives in this app. */
+.bk-note{padding:14px var(--s2);margin-top:var(--s2);font-size:13px;color:var(--ink-2);line-height:1.45}
+.bk-note b{display:block;color:var(--ink);font-size:14px;margin-bottom:4px}
+.bk-list{padding:0}
+.bk-row{display:grid;grid-template-columns:36px 1fr;gap:4px 12px;align-items:center;padding:14px var(--s2)}
+.bk-row + .bk-row{border-top:1px solid var(--line)}
+.bk-row-m b{display:block;font-size:15px;font-weight:600}
+.bk-row-m .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px}
+.bk-row-go{grid-column:2;display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.bk-row-go .m{font-size:12px;color:var(--ink-3)}
+.btn.sm{width:auto;height:36px;padding:0 14px;margin:0;font-size:13px;box-shadow:inset 0 0 0 1px var(--line)}
+@media (min-width:600px){
+  .bk-row{grid-template-columns:36px 1fr auto}
+  .bk-row-go{grid-column:3;margin-top:0;justify-content:flex-end}
+}

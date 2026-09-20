@@ -401,7 +401,11 @@ function renderBoard(loading = false) {
   }
   const mkt = S.mkt;
   const cols = visibleBooks().filter((b) => shown.some((g) => sideKeys(mkt).some((sd) => boardPrice(g, mkt, sd, b.key))));
-  const head = `<div class="br-hd"><span>${esc(mkt === 't' ? 'Over / under' : mkt === 'ml' ? 'Moneyline' : mkt === 'h1' ? '1st-half spread' : 'Spread')}</span><span>Market</span><span>Best</span></div>`;
+  if (S.phBook !== 'mkt' && !cols.some((b) => b.key === S.phBook)) S.phBook = 'mkt'; // that book has nothing on this slate
+  $('#phBooks').innerHTML = [['mkt', 'Market'], ...cols.map((b) => [b.key, b.short])]
+    .map(([k, l]) => `<button class="pbtn" type="button" data-phbook="${esc(k)}" aria-pressed="${S.phBook === k}">${esc(l)}${k !== 'mkt' && S.books.find((b) => b.key === k)?.sharp ? '<span class="tag sharp">S</span>' : ''}</button>`).join('');
+  const colName = S.phBook === 'mkt' ? 'Market' : bookName(S.phBook);
+  const head = `<div class="br-hd"><span>${esc(mkt === 't' ? 'Over / under' : mkt === 'ml' ? 'Moneyline' : mkt === 'h1' ? '1st-half spread' : 'Spread')}</span><span>${esc(colName)}</span><span>Best</span></div>`;
   const block = (games) => `<div class="card brd m">${head}${games.map((g) => boardRow(g, mkt)).join('')}</div>${boardTable(games, mkt, cols)}`;
   const wasOpen = $('#doneGroup')?.open;
   $('#boardBody').innerHTML = groups.map((grp) => `
@@ -444,7 +448,9 @@ function marketKey(g, mkt) {
 function boardRow(g, mkt) {
   const [s1, s2] = sideKeys(mkt);
   const lead = (g.home.score ?? 0) > (g.away.score ?? 0) ? 'home' : 'away';
-  const mk = marketKey(g, mkt);
+  // On a narrow screen there's room for two numbers: the book you picked (market consensus by default)
+  // and the best price anywhere. The wide board shows every book at once, so it ignores this.
+  const mk = S.phBook === 'mkt' ? marketKey(g, mkt) : S.phBook;
   const row = (t, side, pside) => {
     const best = bestFor(g, mkt, pside);
     return `<div class="br-t${!isPre(g) && lead !== side && g.home.score !== g.away.score ? ' trail' : ''}"><span class="rot">${rotOf(g, side) ?? ''}</span>${logo(t)}<span class="nm">${rankTag(t)}${esc(teamName(t))}<small>${esc(t.rec || '')}</small></span><span class="sc num">${isPre(g) ? '' : t.score ?? ''}</span>${mk ? pxCell(g, mkt, pside, mk, null) : '<span class="px na">—</span>'}${best && !isFinal(g) ? pxCell(g, mkt, pside, best.book, best, { sub: bookName(best.book) }) : '<span class="px na"></span>'}</div>`;
@@ -634,6 +640,8 @@ function renderTools() {
     ${kellyCard()}
     ${typeof limCard === 'function' ? limCard() : ''}
     <div class="card tool" id="keysTool"><h3>Key numbers</h3><p id="keysLede">How often last season's NFL games ended by exactly each margin.</p><div id="keysBody"></div></div>
+    <div class="card tool"><h3>Where to bet</h3><p>Every Nevada book on this board, with a link to its site and its app. You sign in at the book — Pick Six never asks for a sportsbook login and never places a bet.</p>
+      <button class="btn ghost" type="button" data-books>Open a sportsbook</button></div>
     <div class="card tool"><h3>Books on the board</h3><p>Tap to hide a book everywhere on this device. Books without a live feed take numbers you type in from the counter.</p><div class="bk-tog" id="bookTog"></div><div class="srcs" id="srcList" style="margin-top:16px"></div></div>
     <div class="card tool"><h3>Settings</h3><p>Unit size is used to show results in units.</p>
       <div class="fgrid"><label class="fld">Unit size ($)<input class="inp" id="unitIn" inputmode="decimal" value="${S.unit}"></label><label class="fld">Alerts<select class="inp" id="alertSel"><option value="off">Off</option><option value="mine">My bets &amp; teams</option><option value="all">Every line move</option></select></label></div>

@@ -698,3 +698,8 @@ textarea.inp{height:72px;padding:12px 14px;font-size:15px;font-weight:500;resize
   .gs-t .n{white-space:normal;overflow:visible;font-size:15px;line-height:1.15;overflow-wrap:anywhere}
   .gs-t .s{font-size:34px}
 }
+
+/* Which book the narrow board shows. The wide board has a column per book, so this is phone-only. */
+.pills.books{margin-top:6px}
+.pills.books .pbtn .tag.sharp{height:14px;padding:0 4px;font-size:9px;margin-left:4px}
+@media (min-width:1024px){.pills.books{display:none}}

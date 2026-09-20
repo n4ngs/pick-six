@@ -26,17 +26,19 @@ const U = require('./lib/util');
 const ESPN = require('./lib/espn');
 const AN = require('./lib/action');
 const { Week } = require('./lib/lines');
-const { BOOKS, byKey } = require('./lib/books');
+const { BOOKS } = require('./lib/books');
 const WX = require('./lib/weather');
 const VSIN = require('./lib/vsin');
 const PIN = require('./lib/pinnacle');
 const Bets = require('./lib/bets');
+const Manual = require('./lib/manual');
 const { margins } = require('./lib/margins');
 
 const { log } = U;
 const PORT = Number(process.env.PORT) || 4849;
 const LIVE_MS = Math.max(4000, Number(process.env.LIVE_MS) || 8000); // scores while games are live
 const ODDS_MS = Math.max(8000, Number(process.env.ODDS_MS) || 15000); // lines while games are live or kicking off soon
+const HOT_MS = Math.max(6000, Number(process.env.HOT_MS) || 9000);    // lines in the last minutes before kickoff and in game
 const VSIN_MS = Math.max(60000, Number(process.env.VSIN_MS) || 120000); // Vegas windows (VSiN refreshes every few minutes)
 const PIN_MS = Math.max(300000, Number(process.env.PIN_MS) || 600000); // Pinnacle caches its guest feed for 15 minutes
 const ACCESS_CODE = process.env.ACCESS_CODE || ''; // set this before putting the app on the internet
@@ -51,7 +53,6 @@ const weeks = new Map(); // id -> W
 let defId = null;        // the week the app opens on
 let curId = null;        // the week containing today
 const clients = new Set();
-let manual = U.readJSON('manual.json', {}); // gid -> book -> line typed in at the counter
 
 const wid = (k) => `${k.season}-${k.type}-${String(k.week).padStart(2, '0')}`;
 
@@ -93,7 +94,8 @@ function nextId() {
 // ---------------------------------------------------------------- the public game object
 // One line per book. When several feeds carry the same book, the fastest wins:
 // Action Network, then VSiN, then Action's public-betting feed, then Pinnacle, then ESPN.
-// A number typed in at the counter wins until a feed reports a newer change for that book.
+// These are the feeds only. Numbers typed in at a counter belong to the device that typed them, so each
+// browser merges its own on top of this (see /api/manual) and the recorded history stays the real market.
 function mergedBooks(G, W) {
   const an = W.an.get(G.id), a1 = W.a1.get(G.id), vs = W.vs.get(G.id), pin = W.pin.get(G.id);
   const out = {};
@@ -105,11 +107,6 @@ function mergedBooks(G, W) {
   // Pinnacle's age is when it last listed this game, not when we last polled: a game it pulled (often news) goes stale.
   if (pin?.line) put('pin', { pin: pin.line }, pin.at || null);
   if (G.dk?.cur && (G.state === 'pre' || !an)) put('espn', { dk: G.dk.cur }, W.at.espn);
-  const H = W.lines.full(G.id);
-  for (const [k, L] of Object.entries(manual[G.id] || {})) {
-    const fed = H?.b?.[k] ? Math.max(...['s', 't', 'ml'].map((m) => H.b[k][m]?.at(-1)?.[0] || 0)) : 0;
-    if (!out[k] || L.at >= fed) out[k] = { ...L, m: true, src: 'you', seen: L.at };
-  }
   return out;
 }
 
@@ -194,7 +191,7 @@ function snapshot(uid) {
     cal: cal.weeks.map((c) => ({ ...c, id: wid({ season: cal.season, type: c.type, week: c.week }) })),
     def: defId, cur: curId, tracked: tracked().map((w) => w.id),
     week: W ? weekSnapshot(W) : null,
-    books: BOOKS.map(({ key, name, short, vegas, sharp }) => ({ key, name, short, vegas: !!vegas, sharp: !!sharp, feed: feeds().has(key) })),
+    books: BOOKS.map(({ key, name, short, vegas, sharp, site, ios }) => ({ key, name, short, vegas: !!vegas, sharp: !!sharp, site: site || null, ios: ios || null, feed: feeds().has(key) })),
     bets: Bets.list(uid),
     liveMs: LIVE_MS,
   };
@@ -455,6 +452,9 @@ async function once(key, fn) {
 }
 const liveish = (W) => [...W.games.values()].some((g) => g.state === 'in' || (g.state === 'pre' && Date.parse(g.start) - Date.now() < 30 * 60e3 && Date.parse(g.start) - Date.now() > -3 * 3600e3));
 const today = (W) => [...W.games.values()].some((g) => g.day === U.etDate() && g.state !== 'post');
+// The hot window: a game is on the field, or kickoff is inside the last quarter of an hour, when the number
+// moves fastest and a stale board costs the most. Everything else can wait a few seconds longer.
+const hot = (W) => [...W.games.values()].some((g) => g.state === 'in' || (g.state === 'pre' && Date.parse(g.start) - Date.now() < 15 * 60e3 && Date.parse(g.start) - Date.now() > -3 * 3600e3));
 
 function every(fn, msFor) {
   const run = async () => {
@@ -478,7 +478,7 @@ function startLoops() {
   every(async () => {
     await Promise.all(tracked().map((W) => once(`an ${W.id}`, async () => {
       if (!W.games.size) return;
-      const ms = liveish(W) ? ODDS_MS : today(W) ? 30000 : 3 * 60e3;
+      const ms = hot(W) ? HOT_MS : liveish(W) ? ODDS_MS : today(W) ? 30000 : 3 * 60e3;
       if (Date.now() - W.at.an < ms - 500) return;
       await pollAn(W);
       flush(W);
@@ -501,7 +501,7 @@ function startLoops() {
     }
   }, () => 2500);
 
-  if (!OFF.has('vsin')) every(() => once('vsin', async () => { if (await pollVsin()) tracked().forEach(flush); }), () => VSIN_MS);
+  if (!OFF.has('vsin')) every(() => once('vsin', async () => { if (await pollVsin()) tracked().forEach(flush); }), () => (tracked().some(hot) ? Math.max(60000, Math.round(VSIN_MS / 2)) : VSIN_MS));
   if (!OFF.has('pinnacle')) every(() => once('pinnacle', async () => { await pollPin(); tracked().forEach(flush); }), () => PIN_MS);
 
   every(async () => {
@@ -533,33 +533,6 @@ async function loadWeek(k) {
   }
   await W.loading;
   return W;
-}
-
-// ---------------------------------------------------------------- counter lines (typed in at the window)
-function setManual(body) {
-  const gid = String(body.gid || '');
-  const book = String(body.book || '');
-  if (!/^\d+$/.test(gid) || !byKey[book]) throw new Error('Unknown game or book.');
-  const n = (v) => U.num(v);
-  const L = { s: n(body.s), so: [n(body.so?.[0]) ?? -110, n(body.so?.[1]) ?? -110], t: n(body.t), to: [n(body.to?.[0]) ?? -110, n(body.to?.[1]) ?? -110], ml: [n(body.ml?.[0]), n(body.ml?.[1])], at: Date.now() };
-  if (L.s == null && L.t == null && L.ml[0] == null) throw new Error('Enter a spread, total or moneyline.');
-  (manual[gid] ||= {})[book] = L;
-  U.writeJSON('manual.json', manual);
-  for (const W of weeks.values()) {
-    const G = W.games.get(gid);
-    if (!G) continue;
-    if (G.state === 'pre') recordBooks(W, G, L.at);
-    flush(W);
-  }
-  return L;
-}
-function clearManual(gid, book) {
-  if (manual[gid]?.[book]) {
-    delete manual[gid][book];
-    if (!Object.keys(manual[gid]).length) delete manual[gid];
-    U.writeJSON('manual.json', manual);
-    for (const W of weeks.values()) if (W.games.has(gid)) flush(W);
-  }
 }
 
 // ---------------------------------------------------------------- HTTP
@@ -607,6 +580,19 @@ function lockedOut(ip) {
   if (failures.size > 5000) for (const [k, v] of failures) if (!v.length || now - v.at(-1) >= LOGIN_WINDOW) failures.delete(k);
   return recent.length >= 5 || allFailures.length >= 100;
 }
+// One device can't flood the shared files: a generous budget of changes, far above real use (a busy Sunday
+// is a few dozen), so a runaway script or a stuck retry loop gets stopped and a person never notices.
+const WRITE_WINDOW = 5 * 60e3, WRITE_MAX = 120;
+const writes = new Map(); // uid -> times of recent changes
+function writeBudget(uid) {
+  const now = Date.now();
+  if (writes.size > 5000) for (const [k, v] of writes) if (!v.length || now - v.at(-1) >= WRITE_WINDOW) writes.delete(k);
+  const list = (writes.get(uid) || []).filter((t) => now - t < WRITE_WINDOW);
+  writes.set(uid, list);
+  if (list.length >= WRITE_MAX) return false;
+  list.push(now);
+  return true;
+}
 const cookieOf = (req) => Object.fromEntries(String(req.headers.cookie || '').split(';').map((c) => c.trim().split('=')).filter((x) => x[0]));
 function authed(req) {
   if (!ACCESS_CODE) return true;
@@ -618,10 +604,10 @@ function authed(req) {
 // short-lived link code (Tools). OWNER_CODE lets the app's owner claim bets saved before ids existed.
 const OWNER_CODE = process.env.OWNER_CODE || '';
 const UID_RE = /^[a-f0-9]{32}$/;
-const uidOf = (req) => { const v = cookieOf(req).hl_uid || ''; return UID_RE.test(v) ? v : ''; };
+const uidOf = (req) => { const v = cookieOf(req).ps_uid || ''; return UID_RE.test(v) ? v : ''; };
 function setUid(req, res, uid) {
   const secure = req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
-  res.setHeader('set-cookie', `hl_uid=${uid}; Path=/; Max-Age=63072000; HttpOnly; SameSite=Lax${secure}`);
+  res.setHeader('set-cookie', `ps_uid=${uid}; Path=/; Max-Age=63072000; HttpOnly; SameSite=Lax${secure}`);
 }
 function ensureUid(req, res) {
   let uid = uidOf(req);
@@ -672,6 +658,7 @@ const server = http.createServer(async (req, res) => {
     return loginPage(res, false);
   }
   const uid = ensureUid(req, res);
+  if (M !== 'GET' && M !== 'HEAD' && p.startsWith('/api/') && !writeBudget(uid)) return sendJSON(res, 429, { error: 'That\u2019s a lot of changes at once. Give it five minutes.' });
   try {
     if (p === '/api/stream') {
       res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' });
@@ -747,12 +734,14 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="pick-six-bets.csv"' });
       return res.end(Bets.csv(uid));
     }
+    if (p === '/api/manual' && M === 'GET') return sendJSON(res, 200, Manual.list(uid));
     if (p === '/api/manual' && M === 'POST') {
-      try { return sendJSON(res, 200, setManual(await readBody(req))); } catch (e) { return sendJSON(res, 400, { error: e.message }); }
+      const body = await readBody(req);
+      try { return sendJSON(res, 200, Manual.set(uid, String(body.gid || ''), String(body.book || ''), body)); } catch (e) { return sendJSON(res, 400, { error: e.message }); }
     }
     if (p === '/api/manual' && M === 'DELETE') {
-      clearManual(url.searchParams.get('gid'), url.searchParams.get('book'));
-      return sendJSON(res, 200, { ok: true });
+      const ok = Manual.clear(uid, String(url.searchParams.get('gid') || ''), String(url.searchParams.get('book') || ''));
+      return sendJSON(res, 200, { ok });
     }
     if (p === '/api/keys') return sendJSON(res, 200, (await margins((cal.season || new Date().getFullYear()) - 1)) || { n: 0 });
     if (p === '/api/lan') return sendJSON(res, 200, { urls: PUBLIC_URL ? [PUBLIC_URL] : lanUrls(), public: !!PUBLIC_URL, port: PORT });

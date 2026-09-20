@@ -50,12 +50,14 @@ const S = {
   season: null, cal: [], def: null, cur: null, tracked: [],
   weeks: new Map(),       // week id -> { meta, games: Map }
   boardWeek: null,        // week id the board is showing
-  books: [],              // [{ key, name, short, vegas, sharp, feed }]
+  books: [],              // [{ key, name, short, vegas, sharp, site, ios, feed }]
+  mine: {},               // gid -> book -> number you typed in at a window: yours, on this device only
   bets: [],
   moves: [],              // recent line moves across tracked weeks, newest first
   keys: null,             // last season's margin/total distribution
   tab: 'live',
   mkt: store.get('mkt', 's'),
+  phBook: store.get('phBook', 'mkt'),  // which book the narrow board shows beside Best ('mkt' = market consensus)
   filter: store.get('filter', 'all'),
   query: '',
   bseg: store.get('bseg', 'open'),
@@ -80,6 +82,12 @@ function gameById(id) {
 const bookName = (k) => ({ cons: 'Market', open: 'Open' }[k] || S.books.find((b) => b.key === k)?.short || k);
 const bookFull = (k) => ({ cons: 'Market consensus', open: 'Opening line' }[k] || S.books.find((b) => b.key === k)?.name || k);
 const visibleBooks = () => S.books.filter((b) => !S.hidden.has(b.key));
+// Where to go to place the bet: the book's own page and its Nevada app. You sign in there; this app never
+// asks for a sportsbook login, never holds one, and never places a bet for you.
+const bookOf = (k) => S.books.find((b) => b.key === k) || null;
+const bookSite = (k) => bookOf(k)?.site || null;
+const bookApp = (k) => bookOf(k)?.ios || null;
+const canBetAt = (k) => !!(bookSite(k) || bookApp(k));
 
 // ------------------------------------------------------------ odds math
 const dec = (o) => (o == null ? null : o > 0 ? 1 + o / 100 : 1 + 100 / Math.abs(o));

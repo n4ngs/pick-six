@@ -378,17 +378,6 @@ function fairFor(g, l) {
   const r = edgePrice(g, l.mkt, l.side, l.mkt === 'ml' ? null : l.line, l.odds, l.book || null);
   return r ? { p: r.p, push: r.push, ev: r.ev, book: r.src, est: r.est, conf: r.conf } : null;
 }
-// Nevada sportsbook pages only (each checked to load). DraftKings, FanDuel and Pinnacle don't take bets in Nevada,
-// Wynn's sportsbook page is gone and Boomer's has no site, so those get no link. On a phone, a book's page opens its
-// app when the app is installed.
-const BOOK_SITE = {
-  mgm: 'https://www.nv.betmgm.com/en/sports',
-  czr: 'https://sportsbook.caesars.com/us/nv/bet',
-  circa: 'https://www.circasports.com/',
-  stn: 'https://stnsports.com/',
-  wg: 'https://www.superbook.com/',
-  sp: 'https://southpointcasino.com/',
-};
 
 // Where a bet slip was opened from (a game, Edges, Sweat Mode, the Time Machine) and how far down you were, so
 // Add to parlay and Save bet put you back there instead of closing everything onto the tab underneath.
@@ -446,7 +435,7 @@ function slipBooksHTML(g, l, sel) {
   const best = bestOf(src, m, l.side)?.book;
   rows.sort((a, b) => (a.k === best ? -1 : b.k === best ? 1 : 0) || (better(m, l.side, a.p, b.p) ? -1 : better(m, l.side, b.p, a.p) ? 1 : 0));
   const priceTxt = (p) => (m === 'ml' ? fmtOdds(p.odds) : `${m === 't' || m === 'h1t' ? (l.side === 'over' ? 'o' : 'u') + fmtTot(p.line) : fmtPts(p.line)} ${fmtOdds(p.odds)}`);
-  return `<div class="slip-books-h"><span>Where to bet</span><span>Tap a book to use its price</span></div>
+  return `<div class="slip-books-h"><span>Where to bet</span><span>Tap a book to use its price · <button type="button" class="k-link" data-books>book links</button></span></div>
     <div class="slip-books" role="group" aria-label="Choose a book">${rows.map((r) => `<button type="button" class="bk-tile${sel === r.k ? ' on' : ''}${r.old ? ' old' : ''}" data-slip-book="${r.k}" aria-pressed="${sel === r.k}" aria-label="${esc(`${bookFull(r.k)}: ${priceTxt(r.p)}${r.k === best ? ', best price' : ''}${r.typed ? ', typed in' : ''}${r.old ? ', price may be old' : ''}`.replace(MINUS, 'minus '))}">
       ${bookIcon(r.k)}<span class="bk-n">${esc(bookName(r.k))}</span><span class="bk-p num">${esc(priceTxt(r.p))}</span>${r.k === best ? '<span class="bk-best">Best</span>' : r.typed ? '<span class="bk-best">Typed</span>' : ''}
     </button>`).join('')}
@@ -535,11 +524,39 @@ function kellySlipHTML(fair, odds, okOdds, stake) {
   const same = Math.abs((stake || 0) - k.dollars) < 0.5;
   return `<details class="k-slip"${open}><summary>Kelly sizing</summary><p>At your ${esc(kellyName())} settings this works out to <b class="num">${esc(fmtMoney(k.dollars))}</b> (${(k.pct * 100).toFixed(1)}% of your bankroll${k.capped ? ', held to your cap' : ''}). Kelly assumes the win chance is right; if it’s too high, Kelly bets too much.</p>${same ? '<span class="k-on">Stake matches</span>' : `<button type="button" class="k-link" data-kelly-use="${k.dollars}">Put ${esc(fmtMoney(k.dollars))} in the stake</button>`}</details>`;
 }
-// A plain link to the book's own app or site, to place the bet there. Prices there can differ.
+// Where to place it: the book's own site and its Nevada app. You sign in at the book — this app never asks
+// for a sportsbook login and never places a bet.
 function bookLinkHTML(book) {
-  const url = BOOK_SITE[book];
-  if (!url) return '';
-  return `<p class="book-go"><a class="k-link" href="${url}" target="_blank" rel="noopener noreferrer">Open ${esc(bookFull(book))} ↗</a><span>Prices there can differ from what’s shown here. Check the ticket before you bet.</span></p>`;
+  const site = bookSite(book), app = bookApp(book);
+  if (!site && !app) return `<p class="book-go"><button type="button" class="k-link" data-books>Where to bet ↗</button><span>Pick a Nevada book to place this at.</span></p>`;
+  const links = [site ? `<a class="k-link" href="${site}" target="_blank" rel="noopener noreferrer">Open ${esc(bookFull(book))} ↗</a>` : '',
+                 app ? `<a class="k-link" href="${app}" target="_blank" rel="noopener noreferrer">Get the app ↗</a>` : ''].filter(Boolean).join('');
+  return `<p class="book-go">${links}<span>You sign in at the book. Prices there can differ from what’s shown here — check the ticket before you bet.</span></p>`;
+}
+
+// ------------------------------------------------------------ where to bet
+// Every Nevada book on the board, with the two ways in. Nothing here takes a login: the links open the book's
+// own site or its App Store page, and the account stays entirely between you and the book.
+function openBooks() {
+  S.sheet = { kind: 'books' };
+  const nv = S.books.filter((b) => b.vegas);
+  const off = S.books.filter((b) => !b.vegas);
+  const row = (b) => {
+    const links = [b.site ? `<a class="btn ghost sm" href="${b.site}" target="_blank" rel="noopener noreferrer">Open site ↗</a>` : '',
+                   b.ios ? `<a class="btn ghost sm" href="${b.ios}" target="_blank" rel="noopener noreferrer">Get the app ↗</a>` : ''].filter(Boolean).join('');
+    const tags = [b.sharp ? '<span class="tag sharp">Sharp</span>' : '', b.feed ? '<span class="tag">Live on the board</span>' : '<span class="tag">Counter numbers</span>'].join('');
+    return `<div class="bk-row">${bookIcon(b.key, 36)}<div class="bk-row-m"><b>${esc(b.name)}</b><div class="tags">${tags}</div></div>
+      <div class="bk-row-go">${links || '<span class="m">No app or site — at the window only</span>'}</div></div>`;
+  };
+  $('#dlgBody').innerHTML = `<h2 id="dlgTitle">Where to bet</h2>
+    <p class="lede">Pick Six shows the numbers. The bet is placed at the book: these open the book's own site or its Nevada app, where you sign in yourself. This app never asks for a sportsbook login, never stores one, and never places a bet for you.</p>
+    <div class="card bk-note"><b>Two things Nevada asks first</b>Nevada apps make you sign up in person at the casino once, with ID. After that you can bet from your phone, but only while you're inside the state.</div>
+    <div class="sub-h" style="margin-top:20px">Nevada books</div>
+    <div class="card list bk-list">${nv.map(row).join('')}</div>
+    <div class="sub-h" style="margin-top:20px">On the board for comparison</div>
+    <p class="m" style="margin:0 0 8px">${esc(off.map((b) => b.name).join(', '))} don't take Nevada bets. They're here because ${esc(off.some((b) => b.sharp) ? 'the sharp offshore number and the big national apps tell you where the market really is' : 'the big national apps tell you where the market really is')}.</p>
+    <button class="btn ghost" type="button" data-closesheet>Done</button>`;
+  showSheet('books', true);
 }
 document.addEventListener('toggle', (ev) => { if (ev.target.matches?.('.k-slip') && S.sheet?.slip) S.sheet.slip.kOpen = ev.target.open; }, true);
 function updateSlipCalc() {
@@ -667,7 +684,7 @@ function paintCounter() {
   const cur = L ? { s: L.s == null ? '' : trim(Math.abs(L.s)), t: L.t == null ? '' : trim(L.t) } : { s: '', t: '' };
   const books = S.books.filter((b) => b.vegas || b.sharp);
   const mine = Object.entries(g.books || {}).filter(([, x]) => x.m);
-  $('#dlgBody').innerHTML = `<h2 id="dlgTitle">Add a number</h2><p class="lede">Standing at a window? Type what the board says. It shows on the board with a thin outline and a timestamp, and the next live update from that book replaces it.</p>
+  $('#dlgBody').innerHTML = `<h2 id="dlgTitle">Add a number</h2><p class="lede">Standing at a window? Type what the board says. It shows on <em>your</em> board with a thin outline and a timestamp — nobody else sharing this app sees it — and the next live update from that book replaces it.</p>
     <div class="sub-h" style="margin-top:16px">Book</div><div class="chips">${books.map((b) => `<button class="chip" type="button" data-cbook="${b.key}" aria-pressed="${b.key === book}">${esc(b.short)}${b.feed ? '' : ' <small>counter</small>'}</button>`).join('')}</div>
     <div class="sub-h" style="margin-top:16px">Favorite</div><div class="chips"><button class="chip" type="button" data-cfav="away" aria-pressed="${fav === 'away'}">${esc(g.away.abbr)}</button><button class="chip" type="button" data-cfav="home" aria-pressed="${fav === 'home'}">${esc(g.home.abbr)}</button></div>
     <div class="fgrid">
@@ -691,8 +708,10 @@ async function saveCounter() {
   const home = s == null ? null : fav === 'home' ? -Math.abs(s) : Math.abs(s);
   const other = (o) => (o == null ? -110 : o < 0 ? -(220 + o) : -110); // mirror the juice on the other side (e.g. -120 / +100)
   try {
-    await api('/api/manual', { method: 'POST', body: JSON.stringify({ gid, book, s: home, so: fav === 'home' ? [so, other(so)] : [other(so), so], t, to: [to, other(to)], ml: [mh, ma] }) });
-    toastText(`${bookName(book)} number saved.`);
+    const L = await api('/api/manual', { method: 'POST', body: JSON.stringify({ gid, book, s: home, so: fav === 'home' ? [so, other(so)] : [other(so), so], t, to: [to, other(to)], ml: [mh, ma] }) });
+    (S.mine[gid] ||= {})[book] = L;
+    repaintMine(gid);
+    toastText(`${bookName(book)} number saved. It shows on your board only.`);
     openGame(gid);
   } catch (e) { $('#cErr').textContent = e.message; }
 }

@@ -72,6 +72,7 @@ document.addEventListener('click', (ev) => {
   if (d.week !== undefined && d.week) { openWeek(d.week); return; }
   if (d.mkt) { S.mkt = d.mkt; store.set('mkt', S.mkt); renderBoard(); return; }
   if (d.filter) { S.filter = d.filter; store.set('filter', S.filter); renderBoard(); return; }
+  if (d.phbook) { S.phBook = d.phbook; store.set('phBook', S.phBook); renderBoard(); return; }
   if (d.bseg) { S.bseg = d.bseg; store.set('bseg', S.bseg); renderBets(); return; }
   if (d.cm) { S.sheet.chartMkt = d.cm; if (d.cm !== 'ml') S.sheet.tableMkt = d.cm; paintGame(); return; }
   if (d.tm) { S.sheet.tableMkt = d.tm; paintGame(); return; }
@@ -83,10 +84,18 @@ document.addEventListener('click', (ev) => {
     return;
   }
   if (d.counter) { openCounter(d.counter); return; }
+  if (d.books !== undefined) { openBooks(); return; }
+  if (d.closesheet !== undefined) { closeSheet(); return; }
   if (d.cbook) { S.sheet.book = d.cbook; paintCounter(); return; }
   if (d.cfav) { S.sheet.fav = d.cfav; paintCounter(); return; }
   if (d.csave !== undefined) { saveCounter(); return; }
-  if (d.cdel) { api(`/api/manual?gid=${S.sheet.gid}&book=${d.cdel}`, { method: 'DELETE' }).then(() => openGame(S.sheet.gid)).catch((e) => toastText(e.message)); return; }
+  if (d.cdel) {
+    const gid = S.sheet.gid;
+    api(`/api/manual?gid=${gid}&book=${d.cdel}`, { method: 'DELETE' })
+      .then(() => { if (S.mine[gid]) { delete S.mine[gid][d.cdel]; if (!Object.keys(S.mine[gid]).length) delete S.mine[gid]; } repaintMine(gid); openGame(gid); })
+      .catch((e) => toastText(e.message));
+    return;
+  }
   if (d.back) { openGame(d.back); return; }
   if (d.slipBook && S.sheet?.slip) { // a book tile in the slip: use that book and its price
     readSlip();
@@ -171,4 +180,5 @@ applyTheme();
 applyAlerts();
 route();
 connect();
+loadMine().then(remergeMine);
 loadKeys().then(() => invalidate());
