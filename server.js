@@ -792,6 +792,7 @@ const server = http.createServer(async (req, res) => {
         if (!L || L.exp < Date.now()) return fail('That code didn’t work. Codes last 10 minutes; make a new one on your other device.');
         links.delete(code);
         const moved = L.uid === uid ? 0 : Bets.merge(uid, L.uid); // bring this device's bets along
+        Group.merge(uid, L.uid); // and one row on the board, not two
         setUid(req, res, L.uid);
         for (const c of clients) if (c.uid === uid) c.uid = L.uid;
         emitBets();
