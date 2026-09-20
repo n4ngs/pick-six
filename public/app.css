@@ -153,6 +153,10 @@ button{border:0;background:none;padding:0;cursor:pointer}
 .fieldv .fd{stroke:var(--accent);stroke-width:.7}
 .fieldv .drive{fill:var(--ink);opacity:.09}
 .fieldv .ball{fill:var(--ink)}
+.fieldv .swp{stroke:var(--accent);stroke-width:1.5;stroke-linecap:round;opacity:.5;stroke-dasharray:1;animation:swp .45s ease-out}
+@keyframes swp{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+.fieldv .to{fill:var(--ink-2)}
+.fieldv .to.off{fill:var(--ink-3);opacity:.22}
 .fieldv text{font:600 3.2px var(--font);fill:var(--ink-3);text-anchor:middle;dominant-baseline:middle}
 .fieldv .ezl{font-size:3.4px;fill:var(--ink-2);letter-spacing:.2px}
 .fieldv.rz .turf{fill:var(--fill)}

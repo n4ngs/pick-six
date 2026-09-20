@@ -301,6 +301,11 @@ function fieldSVG(g, big = false) {
   const lines = [20, 30, 40, 50, 60, 70, 80, 90, 100].map((x) => `<line class="${x === 60 ? 'mid' : 'yd'}" x1="${x}" x2="${x}" y1="1" y2="${H - 1}"/>`).join('');
   const nums = big ? [10, 20, 30, 40, 50, 40, 30, 20, 10].map((n, i) => `<text x="${20 + i * 10}" y="${H - 3}">${n}</text>`).join('') : '';
   let marks = '';
+  // The last play, drawn from where it started to where it ended. The SVG is rebuilt whenever the data
+  // changes, so the animation runs once per play and then sits still. Nothing here loops.
+  if (g.lastYl && g.lastYl[0] !== g.lastYl[1]) {
+    marks += `<line class="swp" pathLength="1" x1="${X(g.lastYl[0])}" x2="${X(g.lastYl[1])}" y1="${H / 2}" y2="${H / 2}"/>`;
+  }
   if (s.yl != null && g.poss) {
     const dir = g.poss === 'home' ? 1 : -1;
     const bx = X(s.yl);
@@ -313,8 +318,12 @@ function fieldSVG(g, big = false) {
     const cy = H / 2;
     marks += `<path class="ball" d="M${bx - dir * 2.2},${cy - 1.6} L${bx + dir * 1.6},${cy} L${bx - dir * 2.2},${cy + 1.6} z"/>`;
   }
+  if (s.to) {
+    const pips = (n, x0, d) => Array.from({ length: 3 }, (_, i) => `<circle class="to${i < n ? '' : ' off'}" cx="${x0 + d * i * 2.6}" cy="2.4" r=".75"/>`).join('');
+    marks += pips(s.to[0], 12.5, 1) + pips(s.to[1], 117.5, -1);
+  }
   const ez = (t, x) => `<rect class="ez" x="${x}" y="0" width="10" height="${H}" rx="${x ? 0 : 1.5}" fill="${esc(t.color || 'var(--ink)')}"/><text class="ezl" x="${x + 5}" y="${H / 2}">${esc(t.abbr)}</text>`;
-  return `<svg class="fieldv${s.rz ? ' rz' : ''}" viewBox="0 0 120 ${H}" role="img" aria-label="${esc(s.text || 'Field')}">
+  return `<svg class="fieldv${s.rz ? ' rz' : ''}" viewBox="0 0 120 ${H}" role="img" aria-label="${esc([s.text, g.last].filter(Boolean).join('. ') || 'Field')}">
     <rect class="turf" x="0" y="0" width="120" height="${H}" rx="1.5"/>${ez(g.home, 0)}${ez(g.away, 110)}${lines}${nums}${marks}</svg>`;
 }
 
