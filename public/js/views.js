@@ -640,7 +640,6 @@ function renderTools() {
     <div class="card tool"><h3>Hedge</h3><p>Lock in profit (or cut a loss) by betting the other side. Works for a live sweat or a parlay's last leg.</p>
       <div class="fgrid"><label class="fld">Original payout if it wins<input class="inp" id="hPay" inputmode="decimal" value="500"></label><label class="fld">Original stake<input class="inp" id="hStake" inputmode="decimal" value="100"></label><label class="fld full">Hedge odds on the other side<input class="inp" id="hOdds" value="-150"></label></div>
       <div class="out" id="hOut"></div></div>
-    ${typeof grpGuestCard === 'function' ? grpGuestCard() : ''}
     ${acctCard()}
     ${kellyCard()}
     ${typeof limCard === 'function' ? limCard() : ''}
@@ -648,6 +647,7 @@ function renderTools() {
     <div class="card tool"><h3>Where to bet</h3><p>Every Nevada book on this board, with a link to its site and its app. You sign in at the book — Pick Six never asks for a sportsbook login and never places a bet.</p>
       <button class="btn ghost" type="button" data-books>Open a sportsbook</button></div>
     <div class="card tool"><h3>Books on the board</h3><p>Tap to hide a book everywhere on this device. Books without a live feed take numbers you type in from the counter.</p><div class="bk-tog" id="bookTog"></div><div class="srcs" id="srcList" style="margin-top:16px"></div></div>
+    ${typeof grpGuestCard === 'function' ? grpGuestCard() : ''}
     <div class="card tool"><h3>Settings</h3><p>Unit size is used to show results in units.</p>
       <div class="fgrid"><label class="fld">Unit size ($)<input class="inp" id="unitIn" inputmode="decimal" value="${S.unit}"></label><label class="fld">Alerts<select class="inp" id="alertSel"><option value="off">Off</option><option value="mine">My bets &amp; teams</option><option value="all">Every line move</option></select></label></div>
       <button class="btn ghost" type="button" id="phoneBtn2">Open on iPhone</button></div>
