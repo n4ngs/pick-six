@@ -676,6 +676,14 @@ const server = http.createServer(async (req, res) => {
   if (jm && (M === 'GET' || M === 'HEAD')) {
     const inv = Group.byToken(jm[1]);
     if (!inv) return loginPage(res, false, 'That link has been turned off. Ask for a new one.');
+    // Your own link, opened on the device that holds the code: you'd stay the owner and see no difference, and
+    // the link would count a use that wasn't a friend. Say so instead.
+    if (roleOf(req) === 'owner') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+      return res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pick Six</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#000;color:#F5F5F7;font:16px/1.5 ui-sans-serif,system-ui;text-align:center;padding:24px}div{max-width:380px}h1{font-size:24px;margin:0 0 10px;letter-spacing:-.02em}p{color:#9C9CA4;margin:0 0 20px}a{color:#F5F5F7}</style>
+<div><h1>That's your own link</h1><p>You're signed in as the owner on this device, so this link changes nothing here. To see what a friend sees, open it in a private window.</p><a href="/">Back to the board</a></div>`);
+    }
     const uid = ensureUid(req, res);
     addCookie(res, `ps_key=${inv.token}; ${cookieOpts(req)}`);
     Group.useInvite(inv.token, uid);
