@@ -1,0 +1,50 @@
+/* Pick Six — Kelly bet sizing (kelly.js). Same tool-card system as the other calculators. */
+.kelly .k-fld{margin-top:var(--s3)}
+.kelly .k-h{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:13px;font-weight:500;color:var(--ink-2)}
+.kelly .k-h b{font-size:17px;font-weight:650;color:var(--ink)}
+.kelly .k-presets{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.kelly .k-presets .chip{min-width:56px;justify-content:center}
+.kelly .k-range{display:block;width:100%;height:44px;margin:4px 0 0;accent-color:var(--ink);cursor:pointer;background:none}
+.kelly .k-ex{margin-top:var(--s3);padding:12px 14px;border-radius:var(--r-md);background:var(--fill);font-size:14px;line-height:1.45;color:var(--ink-2)}
+.kelly .k-ex b{color:var(--ink);font-weight:600}
+.kelly .k-sub{margin:var(--s3) 0 0;font-size:15px;font-weight:600;letter-spacing:-.01em}
+
+/* bet slip: Kelly sizing sits collapsed; opening it is your choice, and it never fills the stake by itself */
+.k-slip{margin:12px 0 0;padding:4px 14px;border-radius:var(--r-md);background:var(--surface);font-size:14px;line-height:1.4;color:var(--ink-2)}
+.k-slip summary{min-height:44px;display:flex;align-items:center;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer;list-style:none}
+.k-slip summary::-webkit-details-marker{display:none}
+.k-slip summary::after{content:"";width:7px;height:7px;margin-left:8px;border-right:1.5px solid var(--ink-2);border-bottom:1.5px solid var(--ink-2);transform:rotate(45deg) translateY(-2px);transition:transform .2s var(--ease)}
+.k-slip[open] summary::after{transform:rotate(-135deg) translateY(-1px)}
+.k-slip p{margin:0 0 8px}
+.k-slip b{color:var(--ink);font-weight:600}
+.k-on{display:inline-block;margin:0 0 10px;font-size:12px;font-weight:600;color:var(--ink-2)}
+.k-link{min-height:44px;font-size:13px;font-weight:600;color:var(--ink);text-decoration:underline;text-underline-offset:2px}
+.k-slip .k-link{display:inline-flex;align-items:center;margin-bottom:4px}
+.calc .v.soft{font-weight:500;color:var(--ink-2)}
+/* the plain link to a Nevada book's own page */
+.book-go{display:flex;flex-direction:column;gap:2px;margin:12px 0 0;font-size:12px;color:var(--ink-2)}
+.book-go .k-link{display:inline-flex;align-items:center;width:max-content;font-size:14px}
+@media (prefers-reduced-motion:reduce){.k-slip summary::after{transition:none}}
+
+/* Edges sheet: how stakes are sized, with a way to change it */
+.edge-sizing{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;margin:12px 0 0;font-size:13px;color:var(--ink-2)}
+.edge-sizing b{color:var(--ink);font-weight:600}
+.edge-sizing-btn{min-height:44px;padding:0 4px;font-size:13px;font-weight:600;color:var(--ink);text-decoration:underline;text-underline-offset:2px}
+
+/* ---------- bet slip: where to bet (book tiles) and the parlay line ---------- */
+.slip-books-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:var(--s2) 0 8px;font-size:13px;font-weight:600;color:var(--ink)}
+.slip-books-h span:last-child{font-size:12px;font-weight:500;color:var(--ink-2)}
+.slip-books{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1 * var(--gutter));padding:2px var(--gutter) 4px;scroll-snap-type:x proximity;scroll-padding-inline:var(--gutter);overscroll-behavior-x:contain}
+.slip-books::-webkit-scrollbar{display:none}
+.bk-tile{position:relative;flex:none;width:96px;min-height:104px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:10px 6px;border-radius:var(--r-md);background:var(--surface);scroll-snap-align:start;text-align:center}
+.bk-tile.on{box-shadow:inset 0 0 0 2px var(--ink)}
+.bk-tile.old{opacity:.6}
+.bk-ico{width:32px;height:32px;border-radius:9px;object-fit:contain;background:#fff;display:block}
+.bk-mono{display:grid;place-items:center;background:var(--fill);color:var(--ink);font-size:12px;font-weight:650;letter-spacing:.02em}
+.bk-n{font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap}
+.bk-p{font-size:12px;font-weight:500;color:var(--ink-2);white-space:nowrap}
+.bk-best{position:absolute;top:6px;right:6px;font-size:10px;font-weight:600;color:var(--ink-2)}
+.slip-parlay{display:flex;align-items:center;gap:6px;margin:var(--s2) 0 0;font-size:13px;color:var(--ink-2)}
+.slip-parlay .k-link{margin-left:auto}
+#slBtns .row-btns .btn .num{font-weight:600}
+@media (min-width:1024px){.slip-books{margin:0;padding:2px 0 4px;flex-wrap:wrap;overflow:visible}}

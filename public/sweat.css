@@ -1,0 +1,129 @@
+/* Pick Six — Sweat mode. Tokens only. Three text sizes per card: the huge chance, 15px body, 12px labels.
+   Green means only "this bet is winning right now"; red only means live. */
+
+/* entry point in the Live tab's "Your sweat" label */
+.sweat-open{position:relative;display:inline-flex;align-items:center;gap:4px;height:32px;margin:-8px -2px -8px 0;padding:0 2px 0 8px;border-radius:999px;font-size:13px;font-weight:500;color:var(--ink-2);white-space:nowrap}
+.sweat-open::before{content:"";position:absolute;inset:-6px -4px}
+.sweat-open svg{width:12px;height:12px}
+.sweat-open:hover{color:var(--ink)}
+.hero-lab:has(.sweat-open){align-items:center}
+
+/* sheet */
+.sw{min-width:0}
+.sw-top{padding-right:48px}
+.sw-top h2{display:flex;align-items:center;gap:10px}
+.sw-list{display:grid;gap:12px;margin-top:var(--s3)}
+.sw-list:empty{display:none}
+.sw-sub-h{margin-top:var(--s4)}
+.sw-sub-h .sw-h{color:var(--ink);font-weight:600}
+.sw-sec{margin-top:var(--s3)}
+.sw-note{font-size:12px;color:var(--ink-3);margin:var(--s4) 0 0;line-height:1.45}
+
+/* one card per bet (or watched game) */
+.sw-card{padding:var(--s2);min-width:0}
+.sw-hd{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.sw-ttl{font-size:15px;font-weight:650;letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sw-ttl .num{font-weight:500;color:var(--ink-2)}
+.sw-s,.sw-lab{font-size:12px;color:var(--ink-2);line-height:1.4}
+.sw-hd .sw-s{margin-top:2px}
+
+.sw-leg{min-width:0}
+.sw-parlay .sw-leg{margin-top:var(--s1);padding-top:var(--s2);border-top:1px solid var(--line)}
+.sw-pick{display:flex;align-items:baseline;gap:8px;font-size:15px}
+.sw-pick b{font-weight:650}
+
+.sw-score{display:flex;align-items:center;gap:6px 16px;flex-wrap:wrap;margin-top:12px;font-size:15px}
+.sw-pick + .sw-score{margin-top:8px}
+.sw-tm{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.sw-tm b{font-weight:600}
+.sw-tm .logo{width:20px;height:20px}
+.sw-tm.trail{color:var(--ink-2)}
+.sw-tm .poss-dot{margin:0 0 0 2px;vertical-align:0}
+.sw-clk{margin-left:auto;display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;white-space:nowrap}
+
+.sw-big{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-top:var(--s2)}
+.sw-pct{font-size:56px;font-weight:650;line-height:.92;letter-spacing:-.05em}
+.sw-pct.win{color:var(--win)}
+.sw-big .sw-lab{margin-top:6px}
+.sw-mo{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:none}
+.sw-spark{display:block;overflow:visible}
+.sw-spark .g{stroke:var(--line);stroke-width:1;stroke-dasharray:2 3}
+.sw-spark path{fill:none;stroke:var(--ink-2);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+.sw-spark circle{fill:var(--ink)}
+.sw-spark.win circle{fill:var(--win)}
+
+.sw-meter{height:6px;border-radius:3px;background:var(--fill);margin-top:12px;overflow:hidden}
+.sw-meter i{display:block;height:100%;border-radius:3px;background:var(--ink-2);transition:width .7s var(--ease),background-color .3s}
+.sw-meter i.win{background:var(--win)}
+
+.sw-st{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px;min-width:0}
+.sw-st .sw-s{text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sw-st .cov.push{color:var(--ink)}
+
+.sw-fld .fieldv{margin-top:var(--s2)}
+.sw-situ{font-size:12px;color:var(--ink-2);margin-top:8px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sw-situ:empty{display:none}
+.sw-situ b{color:var(--ink);font-weight:600}
+.sw-situ .sw-rz{padding:0 6px;border-radius:999px;background:var(--fill)}
+
+.sw-acts{display:flex;gap:8px;margin-top:var(--s2)}
+.sw-btn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:44px;border-radius:999px;background:var(--fill);font-size:15px;font-weight:600;color:var(--ink)}
+.sw-btn svg{width:12px;height:12px}
+.sw-btn[aria-expanded="true"]{background:var(--ink);color:var(--surface)}
+.sw-hedge{margin-top:8px;padding:12px;border-radius:var(--r-md);background:var(--fill)}
+.sw-hq{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sw-hv{font-size:15px;font-weight:650;margin-top:2px}
+.sw-hedge .sw-s{margin:10px 0 0}
+.sw-hedge .sw-s:only-child{margin:0}
+
+/* parlay legs at a glance */
+.sw-lrows{margin-top:var(--s2)}
+.sw-lrow{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:48px;padding:6px 0;border-top:1px solid var(--line)}
+.sw-lname{display:flex;flex-direction:column;min-width:0}
+.sw-lname b{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sw-lname .sw-s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sw-lrow .cov{flex:none}
+
+/* watched game (no bet): neutral all the way through */
+.sw-tot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:var(--s2);padding-top:12px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-2)}
+.sw-tot b{color:var(--ink);font-weight:600}
+
+/* empty state + game picker */
+.sw-empty{margin-top:var(--s3)}
+.sw-none{margin-top:var(--s2)}
+.sw-more{position:relative;height:32px;padding:0 12px;margin:-8px 0;border-radius:999px;background:var(--surface);font-size:12px;font-weight:600;color:var(--ink)}
+.sw-more::before{content:"";position:absolute;inset:-6px -2px}
+.sw-plist{display:grid;overflow:hidden}
+.sw-prow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;width:100%;min-height:72px;padding:10px 12px 10px 16px;text-align:left;box-shadow:inset 0 -1px var(--line)}
+.sw-prow:last-child{box-shadow:none}
+.sw-prow:hover{background:var(--fill)}
+.sw-pteams{display:grid;gap:4px;min-width:0}
+.sw-pt{display:grid;grid-template-columns:20px minmax(0,1fr) auto;align-items:center;gap:8px;font-size:15px;max-width:150px}
+.sw-pt .logo{width:20px;height:20px}
+.sw-pt b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sw-pt.trail{color:var(--ink-2)}
+.sw-pmeta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:12px;color:var(--ink-2);white-space:nowrap}
+.sw-ptog{display:inline-flex;align-items:center;justify-content:center;min-width:84px;height:36px;padding:0 12px;border-radius:999px;background:var(--fill);font-size:12px;font-weight:600;color:var(--ink)}
+.sw-prow[aria-pressed="true"] .sw-ptog{background:var(--ink);color:var(--surface)}
+
+/* a score just changed */
+.sw-card.sw-flash{animation:swflash 1.6s var(--ease)}
+@keyframes swflash{0%{box-shadow:inset 0 0 0 2px var(--ink)}100%{box-shadow:inset 0 0 0 2px transparent}}
+@media (prefers-reduced-motion:reduce){
+  .sw-card.sw-flash{animation:none}
+  .sw-meter i{transition:none}
+}
+
+@media (max-width:370px){
+  .sw-pct{font-size:48px}
+  .sw-ptog{min-width:0}
+}
+@media (min-width:1024px){
+  .sw-list{grid-template-columns:1fr 1fr;gap:var(--s3);align-items:start}
+  .sw-card{padding:var(--s3)}
+  .sw-pct{font-size:64px}
+  .sw-plist{grid-template-columns:1fr 1fr}
+  .sw-plist .sw-prow:nth-last-child(2):nth-child(odd){box-shadow:none}
+  .sw-plist .sw-prow:nth-child(odd){border-right:1px solid var(--line)}
+  .sw-pt{max-width:170px}
+}

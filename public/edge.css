@@ -1,0 +1,48 @@
+/* ---------- Edge Finder (edge.js): one quiet entry on Live, the list sheet, optional board marks ----------
+   Informational by design: no pills, no tiers by size, no red, no green. The number is plain text; a caveat line
+   says what could make it wrong; a single word says how sure it is. */
+.edge-top{margin-top:var(--s3)}
+.edge-entry{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:56px;padding:10px var(--s2);border-radius:var(--r-lg);background:var(--surface);text-align:left;color:var(--ink-2)}
+.edge-entry > span{display:flex;flex-direction:column;gap:2px;min-width:0}
+.edge-entry b{font-size:15px;font-weight:600;color:var(--ink)}
+.edge-entry > span > span{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.edge-entry svg{width:12px;height:12px;flex:none}
+.edge-entry:hover{background:var(--fill)}
+
+.edge-list{padding:4px 0}
+.edge-row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:0 12px;align-items:start;width:100%;min-height:60px;padding:12px var(--s2);text-align:left}
+.edge-row + .edge-row{box-shadow:inset 0 1px 0 var(--line)}
+.edge-row:hover{background:var(--fill)}
+.edge-logo{width:24px;height:24px;margin-top:1px}
+.edge-mid{min-width:0;display:block}
+.edge-t{display:block;font-size:15px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.edge-t b{font-weight:600}
+.edge-t .num{font-weight:500}
+.edge-bk{font-size:13px;font-weight:500;color:var(--ink-2)}
+.edge-s{display:block;margin-top:2px;font-size:12px;line-height:1.35;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.edge-c{display:block;margin-top:3px;font-size:12px;line-height:1.35;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.edge-c::before{content:"";display:inline-block;width:5px;height:5px;margin-right:6px;border-radius:50%;box-shadow:inset 0 0 0 1.25px var(--ink-2);vertical-align:1px}
+.edge-v{display:flex;flex-direction:column;align-items:flex-end;gap:2px;padding-top:1px}
+.edge-p{font-size:15px;font-weight:500;color:var(--ink-2);white-space:nowrap}
+.edge-k{font-size:11px;font-weight:500;color:var(--ink-3);white-space:nowrap}
+.edge-row.c-solid .edge-p{color:var(--ink)}
+.edge-row.c-solid .edge-k{color:var(--ink-2)}
+.edge-row.c-weak .edge-t,.edge-row.c-weak .edge-p{color:var(--ink-2)}
+
+/* sheet */
+.edge-chips{margin-top:var(--s2)}
+.edge-chips .chip{font-size:13px}
+.dlg .edge-list{margin-top:12px}
+.edge-none{margin:var(--s2) 0 0;padding:var(--s2);border-radius:var(--r-md);background:var(--surface);font-size:13px;color:var(--ink-2)}
+.edge-opts{display:flex;gap:8px;flex-wrap:wrap;margin-top:var(--s2)}
+.edge-opts .chip{font-size:13px}
+
+/* board: an optional hollow ring in the price's corner (off unless you turn it on) */
+.edge-b{position:absolute;top:4px;right:3px;width:6px;height:6px;border-radius:50%;box-shadow:inset 0 0 0 1.25px var(--ink-3);pointer-events:none}
+.px.best .edge-b{box-shadow:inset 0 0 0 1.25px var(--surface);opacity:.7}
+
+@media (min-width:1024px){
+  .edge-row{padding:12px var(--s3)}
+  .edge-entry{padding:12px var(--s3)}
+  .bt .edge-b{top:2px;right:1px}
+}

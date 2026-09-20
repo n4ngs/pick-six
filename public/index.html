@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pick Six</title>
+<meta name="description" content="Live NFL lines from Circa, Pinnacle and the Las Vegas windows, line movement, and your bets sweating in real time.">
+<meta name="theme-color" content="#F4F4F6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pick Six">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@500&display=swap" rel="stylesheet">
+<script>
+  // Apply the saved theme before first paint so the page never flashes the wrong one.
+  try { var t = JSON.parse(localStorage.getItem('ps.theme')); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="account.css">
+<link rel="stylesheet" href="kelly.css">
+<link rel="stylesheet" href="clv.css">
+<link rel="stylesheet" href="hitlist.css">
+<link rel="stylesheet" href="edge.css">
+<link rel="stylesheet" href="sweat.css">
+<link rel="stylesheet" href="tmachine.css">
+<link rel="stylesheet" href="weather.css">
+<link rel="stylesheet" href="share.css">
+<link rel="stylesheet" href="limits.css">
+</head>
+<body>
+<div class="wrap" id="app">
+  <header class="top">
+    <a class="brand" href="#live" data-tab="live" aria-label="Pick Six, go to Live"><span class="mark"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><ellipse cx="8" cy="8" rx="6.2" ry="3.6" transform="rotate(-35 8 8)" fill="currentColor" stroke="none"/><path d="M5.9 9.4l4.2-2.8M6.6 7.9l.9 1.2M7.9 7.1l.9 1.2" stroke="var(--ink)" stroke-width="1"/></svg><i></i></span>Pick Six</a>
+    <nav class="nav" aria-label="Sections">
+      <a data-tab="live" href="#live">Live</a>
+      <a data-tab="board" href="#board">Board</a>
+      <a data-tab="bets" href="#bets">My bets<span class="badge" id="betBadgeD" hidden></span></a>
+      <a data-tab="tools" href="#tools">Tools</a>
+    </nav>
+    <div class="top-actions">
+      <button class="pill phone-btn" id="phoneBtn" type="button">Open on iPhone</button>
+      <button class="ibtn" id="alertBtn" type="button" aria-label="Alerts: off"></button>
+      <button class="ibtn" id="themeBtn" type="button" aria-label="Theme: automatic"></button>
+      <div class="pill" id="livePill" role="status" aria-live="polite"><span class="dot pulse"></span><span id="liveText">Connecting</span></div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ============ LIVE ============ -->
+    <section class="view" id="view-live" data-view="live" aria-label="Live">
+      <section class="head">
+        <div>
+          <h1 id="headline">NFL, live</h1>
+          <p id="subline">Loading today's games and lines…</p>
+        </div>
+        <div class="glance-top" id="glanceTop"></div>
+      </section>
+
+      <div class="lay">
+        <div class="hero-main">
+          <div class="hero-side-first" id="moveSlot"></div>
+          <section class="hero" id="hero" aria-label="Game of the moment"></section>
+        </div>
+        <aside class="hero-side" id="heroSide"></aside>
+      </div>
+
+      <section class="sec">
+        <div class="sec-h"><h2>Scores</h2><a class="more" href="#board" data-tab="board" id="scoreMeta"></a></div>
+        <div class="strip" id="strip"></div>
+      </section>
+
+      <section class="sec" id="liveSec">
+        <div class="sec-h"><h2>On the field</h2><span class="more" id="liveMeta"></span></div>
+        <div class="lcs" id="liveCards"></div>
+      </section>
+
+      <section class="sec sec-glance">
+        <div class="sec-h"><h2>Today at a glance</h2></div>
+        <div class="card glance" id="glance"></div>
+      </section>
+
+      <section class="sec" id="learn"></section>
+    </section>
+
+    <!-- ============ BOARD ============ -->
+    <section class="view" id="view-board" data-view="board" aria-label="Board">
+      <div class="view-h">
+        <div><h1 id="boardTitle">The board</h1><p id="boardSub"></p></div>
+        <div class="wk" id="weekNav"></div>
+      </div>
+      <div class="ctrl">
+        <div class="ctrl-row">
+          <div class="seg" id="mktSeg" role="group" aria-label="Market">
+            <button type="button" data-mkt="s">Spread</button>
+            <button type="button" data-mkt="t">Total</button>
+            <button type="button" data-mkt="ml">Money</button>
+            <button type="button" data-mkt="h1">1st half</button>
+          </div>
+        </div>
+        <div class="ctrl-row"><input class="search" id="search" type="search" placeholder="Find a team" autocomplete="off" aria-label="Find a team"></div>
+      </div>
+      <div class="pills" id="filters" role="group" aria-label="Filter"></div>
+      <div id="boardBody"></div>
+    </section>
+
+    <!-- ============ BETS ============ -->
+    <section class="view" id="view-bets" data-view="bets" aria-label="My bets">
+      <div class="view-h">
+        <div><h1>My bets</h1><p id="betsSub">Every ticket, sweating live, graded the second it's final.</p></div>
+        <div class="seg" id="betSeg" role="group" aria-label="Show">
+          <button type="button" data-bseg="open">Open</button>
+          <button type="button" data-bseg="settled">Settled</button>
+          <button type="button" data-bseg="stats">Results</button>
+        </div>
+      </div>
+      <div id="betsBody"></div>
+    </section>
+
+    <!-- ============ TOOLS ============ -->
+    <section class="view" id="view-tools" data-view="tools" aria-label="Tools">
+      <div class="view-h"><div><h1>Tools</h1><p>Calculators, key numbers, and where every line comes from.</p></div></div>
+      <div id="toolsBody"></div>
+    </section>
+  </main>
+
+  <footer class="foot" id="foot"></footer>
+</div>
+
+<nav class="tabbar" aria-label="Sections">
+  <a data-tab="live" href="#live"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14"/></svg>Live</a>
+  <a data-tab="board" href="#board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18l5-6 4 3 7-9"/><path d="M15 6h5v5"/></svg>Board</a>
+  <a data-tab="bets" href="#bets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M5 4h14v16l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 9h6M9 13h4" stroke-linecap="round"/></svg>My bets<span class="badge" id="betBadge" hidden></span></a>
+  <a data-tab="tools" href="#tools"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4.5" y="3.5" width="15" height="17" rx="3"/><path d="M8 7.5h8M8.5 12h1M11.5 12h1M14.5 12h1M8.5 15.5h1M11.5 15.5h1M14.5 15.5h1" stroke-linecap="round"/></svg>Tools</a>
+</nav>
+
+<div class="tray" id="tray" hidden></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<dialog class="dlg" id="dlg" aria-labelledby="dlgTitle">
+  <div class="dlg-in" id="dlgIn">
+    <button class="ibtn dlg-close" id="dlgClose" type="button" aria-label="Close"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+    <div class="grab"></div>
+    <div id="dlgBody"></div>
+  </div>
+</dialog>
+
+<script src="js/core.js"></script>
+<script src="js/live.js"></script>
+<script src="js/views.js"></script>
+<script src="js/sheets.js"></script>
+<script src="js/account.js"></script>
+<script src="js/kelly.js"></script>
+<script src="js/hitlist.js"></script>
+<script src="js/clv.js"></script>
+<script src="js/edge.js"></script>
+<script src="js/sweat.js"></script>
+<script src="js/tmachine.js"></script>
+<script src="js/weather.js"></script>
+<script src="js/share.js"></script>
+<script src="js/limits.js"></script>
+<script src="js/boot.js"></script>
+</body>
+</html>

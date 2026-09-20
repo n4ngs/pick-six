@@ -1,0 +1,14 @@
+{
+  "name": "pick-six",
+  "version": "1.0.0",
+  "description": "Live NFL lines from the Las Vegas windows, Pinnacle and national books, with line movement and your bets sweating live",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

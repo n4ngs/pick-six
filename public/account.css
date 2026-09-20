@@ -1,0 +1,11 @@
+/* Pick Six — "Your bets" card (account.js). Same tool-card system. */
+.acct .acct-link{margin-top:var(--s2)}
+.acct .acct-link .btn{margin-top:0}
+.acct-code-show{display:flex;flex-direction:column;align-items:center;gap:6px;padding:var(--s2);border-radius:var(--r-md);background:var(--fill);text-align:center;font-size:13px;color:var(--ink-2)}
+.acct-code-show b{font-size:34px;font-weight:650;letter-spacing:.12em;color:var(--ink);font-family:var(--mono)}
+.acct-join{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;margin-top:var(--s2)}
+.acct-join .btn{margin-top:0;padding:0 18px;width:auto}
+.acct-code{text-transform:uppercase;letter-spacing:.12em;font-family:var(--mono)}
+.acct-claim{margin-top:var(--s3);padding-top:var(--s2);border-top:1px solid var(--line)}
+.acct-claim b{font-size:15px;font-weight:600}
+.acct-claim p{margin:4px 0 0;font-size:13px;color:var(--ink-2);line-height:1.45}
