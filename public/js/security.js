@@ -23,7 +23,13 @@
   var NAV = [['overview', 'Overview'], ['devices', 'Devices'], ['sessions', 'Sessions'], ['network', 'Network'], ['security', 'Security'], ['risk', 'Risk'], ['audit', 'Audit'], ['timeline', 'Timeline']];
 
   function open() {
-    location.hash = 'security';
+    if (location.hash.indexOf('security') < 0) location.hash = 'security';
+    // Deep-link a sub-view or a detail: #security/devices, #security/device/<id>, #security/timeline
+    var parts = location.hash.replace(/^#/, '').split('/');
+    if (parts[0] === 'security' && parts[1]) {
+      if (parts[2] && ['device', 'session', 'ip', 'user'].indexOf(parts[1]) >= 0) return detail(parts[1], decodeURIComponent(parts[2]));
+      if (NAV.some(function (n) { return n[0] === parts[1]; })) { S.view = parts[1]; return render(); }
+    }
     render();
   }
   function close() { var e = document.getElementById('secCenter'); if (e) e.remove(); if (location.hash === '#security') history.replaceState(null, '', '#' + (window.S && S.tab || 'live')); }
@@ -190,7 +196,8 @@
   });
   function readFilters() { S.filter = {}; Array.prototype.forEach.call(document.querySelectorAll('#secCenter [data-f]'), function (i) { var v = i.value.trim(); if (v && v !== i.getAttribute('data-f')) S.filter[i.getAttribute('data-f')] = v; }); }
 
-  addEventListener('hashchange', function () { if (location.hash === '#security') open(); else if (document.getElementById('secCenter')) close(); });
-  if (location.hash === '#security') open();
+  var isSec = function () { return location.hash.replace(/^#/, '').split('/')[0] === 'security'; };
+  addEventListener('hashchange', function () { if (isSec()) open(); else if (document.getElementById('secCenter')) close(); });
+  if (isSec()) open();
   window.openSecurity = open;
 })();
