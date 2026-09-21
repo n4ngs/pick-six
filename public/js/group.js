@@ -237,7 +237,7 @@ function renderAdmin() {
       ${grpStat('Open tickets', String(open), open ? `${fmtMoney(atRisk)} at risk` : 'nothing running')}
       ${grpStat('Group net', fmtMoney(net, true), 'settled bets only', net > 0 ? 'w' : net < 0 ? 'l' : '')}
     </div>
-    <div class="sec-h" style="margin-top:28px"><h2>Board health</h2><span class="m">What the app is reading right now</span></div>
+    <div class="sec-h" style="margin-top:28px"><h2>Board health</h2><a class="m" href="#security" data-open-security>Open Security Center &rsaquo;</a></div>
     ${grpHealthHTML()}
     <div class="sec-h" style="margin-top:28px"><h2>People</h2><span class="m">${P.length ? `Each row is one device${grpIdleCount() ? ` · ${plural(grpIdleCount(), 'empty one')}` : ''}` : ''}</span></div>
     ${grpIdleCount() ? `<button type="button" class="grp-sweep" data-grp-sweep>${grpSweepArmed ? `Clear ${esc(plural(grpIdleCount(), 'empty device'))}?` : `Clear ${esc(plural(grpIdleCount(), 'empty device'))}`}<small>Unnamed, never logged a bet. They can come back through a live link.</small></button>` : ''}
