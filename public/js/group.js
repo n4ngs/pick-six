@@ -216,6 +216,8 @@ function grpAnalyticsHTML(uid) {
   if (P.lastBet) bits.push(`<span class="grp-a">last bet ${esc(ago(P.lastBet))}</span>`);
   if (P.last) bits.push(`<span class="grp-a">${esc(serverNow() - P.last < 10 * 60e3 ? 'on the board now' : `last open ${ago(P.last)}`)}</span>`);
   if (P.first) bits.push(`<span class="grp-a">joined ${esc(ago(P.first))}${P.via ? ` via ${esc(P.via)}` : ''}</span>`);
+  if (P.dev) bits.push(`<span class="grp-a">${esc(P.dev)}</span>`);
+  if (P.opens) bits.push(`<span class="grp-a">opened ${esc(plural(P.opens, 'time'))}</span>`);
   // A row is a device, not a person: the id is the only way to tell two phones of the same name apart.
   bits.push(`<span class="grp-a grp-dev" title="device id">${esc(P.uid.slice(0, 8))}</span>`);
   const armed = grpArmed === P.uid;
@@ -282,11 +284,37 @@ async function grpPersonSheet(uid) {
   if (S.sheet?.kind !== 'person' || S.sheet.uid !== uid) return;
   const open = d.bets.filter((b) => b.status === 'open');
   const done = d.bets.filter((b) => b.status !== 'open');
-  const row = (b) => `<div class="grp-b">
-    <span class="grp-b-m">${esc(grpLegs(b))}${b.book ? `<small>${esc(bookName(b.book))}</small>` : ''}</span>
-    <span class="grp-b-r">${esc(fmtMoney(b.stake))}${b.status === 'open' ? '<small>open</small>' : `<b class="${b.net > 0 ? 'w' : b.net < 0 ? 'l' : ''}">${esc(fmtMoney(b.net || 0, true))}</b><small>${esc(b.status)}</small>`}</span></div>`;
+  const A = grpActOf(uid);
+  /* The old row said "home +210 + away +185" and nothing else — no game, no date, no price context, no
+     closing line. That is a record, not a log. This says which game, which side by name, what they paid,
+     where, when, and whether the number moved for or against them afterwards. */
+  const row = (b) => {
+    const g = typeof gameById === 'function' ? gameById(b.legs?.[0]?.gid) : null;
+    const match = g ? `${g.away?.abbr} @ ${g.home?.abbr}` : '';
+    const clv = (b.legs || []).map((l) => l.clv).find((c) => c && (Number.isFinite(c.pts) || Number.isFinite(c.pct)));
+    const clvTxt = clv ? (Number.isFinite(clv.pts) ? `${clv.pts > 0 ? '+' : ''}${clv.pts} pts vs close` : `${clv.pct > 0 ? '+' : ''}${clv.pct.toFixed(1)}% vs close`) : '';
+    const when = b.placed ? Date.parse(b.placed) : b.created;
+    return `<div class="grp-b">
+      <span class="grp-b-m">${esc(grpPickTxt(b))}
+        <small>${esc([match, b.book ? bookName(b.book) : '', when ? `${dayLabel(new Date(when).toISOString())} ${timeLabel(new Date(when).toISOString())}` : ''].filter(Boolean).join(' · '))}</small>
+        ${clvTxt ? `<small class="grp-b-clv ${clv.pts > 0 || clv.pct > 0 ? 'w' : (clv.pts < 0 || clv.pct < 0) ? 'l' : ''}">${esc(clvTxt)}</small>` : ''}
+        ${b.note ? `<small>&ldquo;${esc(b.note)}&rdquo;</small>` : ''}</span>
+      <span class="grp-b-r">${esc(fmtMoney(b.stake))}<small>${esc(fmtOdds(b.odds))}</small>${b.status === 'open' ? '<small>open</small>' : `<b class="${b.net > 0 ? 'w' : b.net < 0 ? 'l' : ''}">${esc(fmtMoney(b.net || 0, true))}</b><small>${esc(b.status)}${b.settled ? ` ${esc(ago(b.settled))}` : ''}</small>`}</span></div>`;
+  };
+  const facts = [];
+  if (A?.dev) facts.push(A.dev);
+  if (A?.opens) facts.push(`opened ${plural(A.opens, 'time')}`);
+  if (P?.last) facts.push(serverNow() - P.last < 10 * 60e3 ? 'on the board now' : `last open ${ago(P.last)}`);
+  if (P?.first) facts.push(`joined ${ago(P.first)}${P?.via ? ` via ${P.via}` : ''}`);
+  facts.push(uid.slice(0, 8));
+  const stat = (k, v, cls = '') => `<div class="grp-stat"><span class="grp-stat-k">${esc(k)}</span><b class="${cls}">${esc(v)}</b></div>`;
   $('#dlgBody').innerHTML = `<h2 id="dlgTitle">${esc(d.name || P?.name || 'Someone')}</h2>
-    <p class="lede">${P?.via ? `Joined on ${esc(P.via)}'s link. ` : ''}${plural(d.bets.length, 'ticket')} in their log.</p>
+    <p class="lede">${esc(facts.join(' · '))}</p>
+    ${A && A.n ? `<div class="grp-sum" style="margin-top:16px">
+      ${stat('Record', `${A.won}-${A.lost}${A.push ? `-${A.push}` : ''}`)}
+      ${stat('Net', fmtMoney(A.net, true), A.net > 0 ? 'w' : A.net < 0 ? 'l' : '')}
+      ${stat('Beats the close', A.clvN ? `${Math.round((A.clvBeat || 0) * 100)}%` : '—', A.clvAvg > 0 ? 'w' : A.clvAvg < 0 ? 'l' : '')}
+    </div>` : ''}
     ${open.length ? `<div class="sub-h" style="margin-top:20px">Running now</div><div class="card grp-blist">${open.map(row).join('')}</div>` : ''}
     ${done.length ? `<div class="sub-h" style="margin-top:20px">Settled</div><div class="card grp-blist">${done.slice(0, 60).map(row).join('')}</div>` : ''}
     ${d.bets.length ? '' : '<div class="card empty" style="margin-top:20px"><b>No tickets yet</b>They haven\'t logged a bet.</div>'}

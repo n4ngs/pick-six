@@ -914,7 +914,7 @@ const server = http.createServer(async (req, res) => {
     const html = indexHTML().replace('<link rel="manifest" href="manifest.webmanifest">', link + stash);
     return sendBody(res, 200, html, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store', vary: 'cookie' });
   }
-  Group.note(uid, Group.byToken(cookieOf(req).ps_key || '')?.id || null);
+  Group.note(uid, Group.byToken(cookieOf(req).ps_key || '')?.id || null, { ua: req.headers['user-agent'] });
   if (M !== 'GET' && M !== 'HEAD' && p.startsWith('/api/') && !writeBudget(uid)) return sendJSON(res, 429, { error: 'That\u2019s a lot of changes at once. Give it five minutes.' });
   const ownerOnly = () => sendJSON(res, 403, { error: 'Only the person who runs this board can do that.' });
   try {
@@ -1042,6 +1042,7 @@ const server = http.createServer(async (req, res) => {
         const net = done.reduce((t, b) => t + (b.net || 0), 0);
         return {
           uid: P.uid, name: P.name || '', via: P.via || null, first: P.first || null, last: P.last || null,
+          dev: P.dev || '', opens: P.opens || 0, seen: P.seen || [],
           n: bets.length, openN: open.length,
           openRisk: open.reduce((t, b) => t + (b.stake || 0), 0),
           won: done.filter((b) => b.status === 'won').length,

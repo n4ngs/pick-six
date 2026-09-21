@@ -127,3 +127,8 @@
   background:var(--fill);text-align:left;font-size:13px;font-weight:600;color:var(--ink-2)}
 .grp-sweep small{display:block;margin-top:2px;font-size:11px;font-weight:500;color:var(--ink-3)}
 .grp-sweep:hover{color:var(--ink)}
+
+/* the person sheet's bet rows carry more than a number now */
+.grp-b-clv{font-weight:600}
+.grp-b-clv.w{color:var(--win)}
+.grp-b-clv.l{color:var(--accent)}
