@@ -33,6 +33,7 @@ const PIN = require('./lib/pinnacle');
 const Bets = require('./lib/bets');
 const Manual = require('./lib/manual');
 const Group = require('./lib/group');
+const Tel = require('./lib/telemetry');
 const { margins } = require('./lib/margins');
 
 const { log } = U;
@@ -646,6 +647,18 @@ function lockedOut(ip) {
 // is a few dozen), so a runaway script or a stuck retry loop gets stopped and a person never notices.
 const WRITE_WINDOW = 5 * 60e3, WRITE_MAX = 120;
 const writes = new Map(); // uid -> times of recent changes
+// A light budget for telemetry ingest: generous, since a batch carries up to 40 events, but bounded so a
+// single device cannot flood the log. Separate from the bet-mutation budget on purpose.
+const telHits = new Map();
+function telBudget(uid) {
+  const now = Date.now();
+  const a = telHits.get(uid) || [];
+  const recent = a.filter((t) => now - t < 60e3);
+  recent.push(now);
+  telHits.set(uid, recent);
+  if (telHits.size > 5000) for (const [k, v] of telHits) if (!v.length || now - v[v.length - 1] > 60e3) telHits.delete(k);
+  return recent.length <= 30;   // ~30 batches/min/device
+}
 function writeBudget(uid) {
   const now = Date.now();
   if (writes.size > 5000) for (const [k, v] of writes) if (!v.length || now - v.at(-1) >= WRITE_WINDOW) writes.delete(k);
@@ -792,8 +805,30 @@ function indexHTML() {
   return idxCache.html;
 }
 
+// A route with ids stripped, so /api/game/401872945 and /api/group/person/ab12 aggregate as one line.
+function telRoute(p) {
+  return String(p || '')
+    .replace(/\/(m\/[ck]|j)\/[^/]+/g, '/$1/:tok')
+    .replace(/\/[0-9a-f]{8,}/gi, '/:id')
+    .replace(/\/\d{4,}/g, '/:id')
+    .slice(0, 80);
+}
 const server = http.createServer(async (req, res) => {
   res.__ae = req.headers['accept-encoding'] || '';   // read by sendBody(); keeps ~30 call sites unchanged
+  // Request telemetry. One record per served request, written when the response finishes so status and
+  // latency are final. Wrapped so a telemetry fault can never affect the response. `res.__tel` is filled
+  // in below once the device id and role are known.
+  const __t0 = Date.now();
+  res.on('finish', () => {
+    try {
+      const info = res.__tel || {};
+      Tel.request({
+        uid: info.uid || '', role: info.role || '', user: info.user || '', uaStr: req.headers['user-agent'],
+        ip: clientIp(req), route: telRoute(new URL(req.url, 'http://x').pathname),
+        method: req.method, status: res.statusCode, ms: Date.now() - __t0,
+      });
+    } catch { /* never throw from a finish handler */ }
+  });
   /* Security headers, on every response. Set with setHeader so writeHead() further down merges them in.
 
      frame-ancestors / X-Frame-Options: nothing may frame this app. The Admin Center has destructive
@@ -820,8 +855,9 @@ const server = http.createServer(async (req, res) => {
     req.on('data', (c) => { body += c; if (body.length > 2000) req.destroy(); });
     req.on('end', () => {
       const code = new URLSearchParams(body).get('code') || '';
-      if (!sameHash(hashCode(code), codeHash)) { failures.get(ip).push(Date.now()); allFailures.push(Date.now()); log('login: wrong code from', ip); return loginPage(res, true); }
+      if (!sameHash(hashCode(code), codeHash)) { failures.get(ip).push(Date.now()); allFailures.push(Date.now()); log('login: wrong code from', ip); Tel.auth('login_failure', { uid: uidOf(req), uaStr: req.headers['user-agent'], ip, route: '/login', data: { reason: 'wrong_code' } }); return loginPage(res, true); }
       failures.delete(ip);
+      Tel.auth('login_success', { uid: uidOf(req), role: 'owner', uaStr: req.headers['user-agent'], ip, route: '/login' });
       const secure = req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
       res.writeHead(303, { location: '/', 'set-cookie': `ps_code=${codeHash}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax${secure}` });
       res.end();
@@ -910,7 +946,30 @@ const server = http.createServer(async (req, res) => {
     return loginPage(res, false);
   }
   const uid = ensureUid(req, res);
-  const role = roleOf(req);
+  let role = roleOf(req);
+  const userId = Group.person(uid)?.name || '';
+  res.__tel = { uid, role, user: userId };      // the finish hook reads this (device↔user correlation)
+  // Effective access is the OR of the independent controls (telemetry.accessDenied): a blocked device or a
+  // disabled user is turned away with 403, but never locked out of its own LOGIN — it can still reach the
+  // login page. The owner's own device is never denied (it holds the code, not an invite).
+  if (role !== 'owner' && p.startsWith('/api/') && p !== '/api/health') {
+    const denied = Tel.accessDenied(uid, userId, null);
+    if (denied) {
+      Tel.audit('access_denied', { uid, role, user: userId, route: telRoute(p), ipHash: Tel.ipHash(clientIp(req)), data: { reason: denied } });
+      return sendJSON(res, 403, { error: 'This board is not available on this device right now.' });
+    }
+  }
+  // Require-reauth: the owner asked this device to sign in again. Clear its credential cookies and, on an
+  // API call, answer 401 so the client falls back to the login page. Fires once, then the flag clears.
+  if (Tel.needsReauth(uid) && role !== null) {
+    Tel.clearReauth(uid);
+    Tel.audit('forced_reauth_applied', { uid, role, route: telRoute(p), ipHash: Tel.ipHash(clientIp(req)) });
+    const gone = `Path=/; Max-Age=0; HttpOnly; SameSite=Lax${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`;
+    addCookie(res, `ps_code=; ${gone}`); addCookie(res, `ps_key=; ${gone}`);
+    role = null;
+    if (p.startsWith('/api/')) return sendJSON(res, 401, { error: 'Please sign in again.' });
+    return loginPage(res, false);
+  }
   // The page carries the manifest that matches who is holding it, so Add to Home Screen bakes a start_url that
   // re-authenticates on every launch instead of one that depends on a cookie surviving.
   if ((p === '/' || p === '/index.html') && M === 'GET') {
@@ -933,6 +992,17 @@ const server = http.createServer(async (req, res) => {
   // `self` records the owner's own phone so it is visible in the Admin Center. Only on a board with an
   // access code: without one everybody is the owner, and every passer-by would become a row.
   Group.note(uid, Group.byToken(cookieOf(req).ps_key || '')?.id || null, { ua: req.headers['user-agent'], addr: clientIp(req), self: role === 'owner' && !!ACCESS_CODE });
+  // First-party telemetry ingest. Any authenticated device may report its OWN activity, so it sits ahead
+  // of the bet-mutation write budget (telemetry is frequent and cheap) but keeps a light budget of its
+  // own. The server supplies the trusted identity; the client only says what it did.
+  if (p === '/api/telemetry' && M === 'POST') {
+    if (!telBudget(uid)) return sendJSON(res, 429, { ok: false });
+    try {
+      const body = await readBody(req);
+      const n = Tel.ingest(body && body.events, { uid, role, user: Group.person(uid)?.name || '', ip: clientIp(req), uaStr: req.headers['user-agent'] });
+      return sendJSON(res, 200, { ok: true, n });
+    } catch { return sendJSON(res, 200, { ok: false }); }   // never surface a telemetry parse error to a page
+  }
   if (M !== 'GET' && M !== 'HEAD' && p.startsWith('/api/') && !writeBudget(uid)) return sendJSON(res, 429, { error: 'That\u2019s a lot of changes at once. Give it five minutes.' });
   const ownerOnly = () => sendJSON(res, 403, { error: 'Only the person who runs this board can do that.' });
   try {
@@ -1155,6 +1225,48 @@ const server = http.createServer(async (req, res) => {
       log('group: swept', n, 'unnamed device(s) with no bets');
       if (n) emitSnapshot();
       return sendJSON(res, 200, { ok: true, cleared: n });
+    }
+    // ===================================================== Security Center (owner only)
+    if (p.startsWith('/api/security/')) {
+      if (role !== 'owner') return ownerOnly();          // every read AND write here is owner-gated
+      const sub = p.slice('/api/security/'.length);
+      const q = Object.fromEntries(url.searchParams);
+      if (M === 'GET') {
+        if (sub === 'overview') return sendJSON(res, 200, Tel.overview());
+        if (sub === 'query') return sendJSON(res, 200, { events: Tel.query(q) });
+        if (sub === 'relationships') return sendJSON(res, 200, Tel.relationships());
+        if (sub === 'devices') return sendJSON(res, 200, { devices: Tel.listDevices() });
+        if (sub === 'sessions') return sendJSON(res, 200, { sessions: Tel.listSessions() });
+        if (sub === 'ips') return sendJSON(res, 200, { ips: Tel.listIps() });
+        if (sub === 'security') return sendJSON(res, 200, { events: Tel.listSecurity(q.sev) });
+        if (sub === 'audit') return sendJSON(res, 200, { events: Tel.listAudit() });
+        const m = /^(device|session|ip|user)\/(.+)$/.exec(sub);
+        if (m) {
+          const detail = m[1] === 'device' ? Tel.deviceDetail(m[2]) : m[1] === 'session' ? Tel.sessionDetail(m[2])
+            : m[1] === 'ip' ? Tel.ipDetail(m[2]) : Tel.userDetail(decodeURIComponent(m[2]));
+          return detail ? sendJSON(res, 200, detail) : sendJSON(res, 404, { error: 'Not found' });
+        }
+        return sendJSON(res, 404, { error: 'Unknown query' });
+      }
+      if (sub === 'action' && M === 'POST') {
+        const b = await readBody(req);
+        const target = String(b.target || '');
+        const a = String(b.action || '');
+        const base = { uid, role, route: '/api/security/action', ipHash: Tel.ipHash(clientIp(req)) };
+        let result = null;
+        if (a === 'revoke_session') result = Tel.revokeSession(target);
+        else if (a === 'revoke_user') result = Tel.revokeUser(target);
+        else if (a === 'block_device') result = Tel.blockDevice(target, true, String(b.reason || 'owner'));
+        else if (a === 'unblock_device') result = Tel.blockDevice(target, false);
+        else if (a === 'require_reauth') result = Tel.requireReauth(target);
+        else if (a === 'require_reauth_user') result = Tel.requireReauthUser(target);
+        else if (a === 'disable_user') result = Tel.disableUser(target, true);
+        else if (a === 'enable_user') result = Tel.disableUser(target, false);
+        else return sendJSON(res, 400, { error: 'Unknown action' });
+        Tel.audit(a, { ...base, data: { target, reason: b.reason || undefined, result } });   // every admin action is audited
+        return sendJSON(res, 200, { ok: true, action: a, target, result });
+      }
+      return sendJSON(res, 404, { error: 'Unknown security route' });
     }
     if (p === '/api/me' && M === 'GET') return sendJSON(res, 200, { role, name: Group.person(uid)?.name || '', bets: Bets.list(uid).length, claimable: OWNER_CODE ? Bets.unowned() : 0 });
     if (p === '/api/me/name' && M === 'POST') {
