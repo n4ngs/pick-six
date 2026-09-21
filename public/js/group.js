@@ -88,12 +88,18 @@ function grpHealthHTML() {
    Guests are told, the first time they open the app, that the person who runs the board sees their
    tickets. That disclosure is what makes this fair, and it stays. */
 let grpAct = null;
+let grpArmed = null;   // a clear is two taps: destructive, and a mis-tap on a phone is easy
 
 function grpLoadActivity() {
   if (typeof api !== 'function') return Promise.resolve();
   return api('/api/group/activity')
     .then((d) => { grpAct = d; })
     .catch(() => { grpAct = { failed: true }; });
+}
+let grpSweepArmed = false;
+// Rows that never named themselves and never logged a bet — the residue of testing a link.
+function grpIdleCount() {
+  return (grpAct?.people || []).filter((x) => !x.name && !x.n).length;
 }
 const grpActOf = (uid) => (grpAct?.people || []).find((x) => x.uid === uid) || null;
 
@@ -179,7 +185,8 @@ function renderAdmin() {
     </div>
     <div class="sec-h" style="margin-top:28px"><h2>Board health</h2><span class="m">What the app is reading right now</span></div>
     ${grpHealthHTML()}
-    <div class="sec-h" style="margin-top:28px"><h2>People</h2><span class="m">${P.length ? 'Tap a name for their log' : ''}</span></div>
+    <div class="sec-h" style="margin-top:28px"><h2>People</h2><span class="m">${P.length ? `Each row is one device${grpIdleCount() ? ` · ${plural(grpIdleCount(), 'empty one')}` : ''}` : ''}</span></div>
+    ${grpIdleCount() ? `<button type="button" class="grp-sweep" data-grp-sweep>${grpSweepArmed ? `Clear ${esc(plural(grpIdleCount(), 'empty device'))}?` : `Clear ${esc(plural(grpIdleCount(), 'empty device'))}`}<small>Unnamed, never logged a bet. They can come back through a live link.</small></button>` : ''}
     <div class="card grp-list" id="grpPeople"></div>
     <div class="sec-h" style="margin-top:28px"><h2>Everything logged</h2><span class="m">Every tracked bet on this board, settled included</span></div>
     ${grpLedgerHTML()}
@@ -209,6 +216,10 @@ function grpAnalyticsHTML(uid) {
   if (P.lastBet) bits.push(`<span class="grp-a">last bet ${esc(ago(P.lastBet))}</span>`);
   if (P.last) bits.push(`<span class="grp-a">${esc(serverNow() - P.last < 10 * 60e3 ? 'on the board now' : `last open ${ago(P.last)}`)}</span>`);
   if (P.first) bits.push(`<span class="grp-a">joined ${esc(ago(P.first))}${P.via ? ` via ${esc(P.via)}` : ''}</span>`);
+  // A row is a device, not a person: the id is the only way to tell two phones of the same name apart.
+  bits.push(`<span class="grp-a grp-dev" title="device id">${esc(P.uid.slice(0, 8))}</span>`);
+  const armed = grpArmed === P.uid;
+  bits.push(`<button type="button" class="grp-clear${armed ? ' armed' : ''}" data-grp-clear="${esc(P.uid)}">${armed ? `Clear this device${P.n ? ` and ${esc(plural(P.n, 'bet'))}` : ''}?` : 'Clear'}</button>`);
   return bits.length ? `<div class="grp-arow">${bits.join('')}</div>` : '';
 }
 const grpStat = (k, v, sub, cls = '') => `<div class="grp-stat"><span class="grp-stat-k">${esc(k)}</span><b class="${cls}">${esc(v)}</b><span class="grp-stat-s">${esc(sub)}</span></div>`;
@@ -303,7 +314,7 @@ function grpErr(msg) { const e = $('#grpErr'); if (e) e.textContent = msg || '';
 
 // ------------------------------------------------------------ clicks
 document.addEventListener('click', async (ev) => {
-  const t = ev.target.closest('[data-grp-make],[data-grp-copy],[data-grp-qr],[data-grp-revoke],[data-grp-person],[data-grp-name]');
+  const t = ev.target.closest('[data-grp-make],[data-grp-copy],[data-grp-qr],[data-grp-revoke],[data-grp-person],[data-grp-name],[data-grp-clear],[data-grp-sweep]');
   if (!t) return;
   const d = t.dataset;
 
@@ -330,6 +341,32 @@ document.addEventListener('click', async (ev) => {
       if (S.tab === 'admin') renderAdmin();
       toastText(`${label}'s link is off. Anyone using it is signed out.`);
     } catch (e) { grpErr(e.message); }
+    return;
+  }
+  if (d.grpClear !== undefined) {
+    const uid = d.grpClear;
+    if (grpArmed !== uid) { grpArmed = uid; grpSweepArmed = false; renderAdmin(); return; }
+    grpArmed = null;
+    const P = grpActOf(uid);
+    try {
+      await api(`/api/group/person/${encodeURIComponent(uid)}${P && P.n ? '?bets=1' : ''}`, { method: 'DELETE' });
+      grpPeople = null; grpAct = null;
+      await Promise.all([grpLoadGroup(), grpLoadActivity()]);
+      renderAdmin();
+      toastText(`Cleared${P?.name ? ` ${P.name}` : ' that device'}.`);
+    } catch (e) { grpErr(e.message); renderAdmin(); }
+    return;
+  }
+  if (d.grpSweep !== undefined) {
+    if (!grpSweepArmed) { grpSweepArmed = true; grpArmed = null; renderAdmin(); return; }
+    grpSweepArmed = false;
+    try {
+      const r = await api('/api/group/sweep', { method: 'POST' });
+      grpPeople = null; grpAct = null;
+      await Promise.all([grpLoadGroup(), grpLoadActivity()]);
+      renderAdmin();
+      toastText(`Cleared ${plural(r.cleared || 0, 'empty device')}.`);
+    } catch (e) { grpErr(e.message); renderAdmin(); }
     return;
   }
   if (d.grpPerson) { grpPersonSheet(d.grpPerson); return; }

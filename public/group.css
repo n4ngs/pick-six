@@ -114,3 +114,16 @@
   .grp-led-h span:nth-child(4)::before{content:""}
   .grp-led-s,.grp-led-c,.grp-led-h span:nth-child(5){display:none}
 }
+
+/* ───────────────────────────────────────── clearing a device
+   Destructive and easy to mis-tap on a phone, so it arms on the first press and acts on the second.
+   Resting state is quiet; armed takes the accent, because armed is the moment that matters. */
+.grp-dev{font-family:var(--mono);font-size:11px;color:var(--ink-3);letter-spacing:-.02em}
+.grp-clear{font-size:12px;color:var(--ink-3);padding:2px 0;text-decoration:underline;text-underline-offset:2px;
+  text-decoration-color:var(--line);transition:color .12s var(--ease)}
+.grp-clear:hover{color:var(--ink-2)}
+.grp-clear.armed{color:var(--accent);font-weight:600;text-decoration-color:var(--accent)}
+.grp-sweep{display:block;width:100%;margin-top:10px;padding:12px 16px;border-radius:var(--r-md);
+  background:var(--fill);text-align:left;font-size:13px;font-weight:600;color:var(--ink-2)}
+.grp-sweep small{display:block;margin-top:2px;font-size:11px;font-weight:500;color:var(--ink-3)}
+.grp-sweep:hover{color:var(--ink)}

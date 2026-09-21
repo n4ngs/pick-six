@@ -1087,6 +1087,34 @@ const server = http.createServer(async (req, res) => {
         bets: all.slice(0, CAP), betsTotal: all.length, capped: all.length > CAP,
       });
     }
+    /* Clear a device, or sweep the residue of testing.
+
+       Owner-only. `bets=1` also drops that device's tracked bets, which is a separate and larger act
+       than tidying a list, so it is never the default — the caller has to ask for it and the UI says
+       which it is doing. A cleared device is not banned: a live share link lets it back in as a new row. */
+    const rmPerson = /^\/api\/group\/person\/([a-f0-9]{8,64})$/.exec(p);
+    if (rmPerson && M === 'DELETE') {
+      if (role !== 'owner') return ownerOnly();
+      const target = rmPerson[1];
+      if (target === uid) return sendJSON(res, 400, { error: 'That is this device. Clearing yourself would lock you out of your own board.' });
+      const bets = url.searchParams.get('bets') === '1' ? Bets.removeOwner(target) : 0;
+      const gone = Group.forget(target);
+      if (!gone && !bets) return sendJSON(res, 404, { error: 'Nobody here by that id.' });
+      log('group: cleared device', target.slice(0, 8), bets ? `and ${bets} bet(s)` : '(bets kept)');
+      emitSnapshot();
+      return sendJSON(res, 200, { ok: true, bets });
+    }
+    // The dozen empty rows a few people leave behind while a link is being tested.
+    if (p === '/api/group/sweep' && M === 'POST') {
+      if (role !== 'owner') return ownerOnly();
+      const by = Bets.byOwner();
+      const ids = Group.idle(uid, (k) => (by.get(k) || []).length > 0);
+      let n = 0;
+      for (const id of ids) if (Group.forget(id)) n++;
+      log('group: swept', n, 'unnamed device(s) with no bets');
+      if (n) emitSnapshot();
+      return sendJSON(res, 200, { ok: true, cleared: n });
+    }
     if (p === '/api/me' && M === 'GET') return sendJSON(res, 200, { role, name: Group.person(uid)?.name || '', bets: Bets.list(uid).length, claimable: OWNER_CODE ? Bets.unowned() : 0 });
     if (p === '/api/me/name' && M === 'POST') {
       try { return sendJSON(res, 200, { name: Group.setName(uid, (await readBody(req)).name) }); } catch (e) { return sendJSON(res, 400, { error: e.message }); }
