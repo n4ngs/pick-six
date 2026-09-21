@@ -79,10 +79,92 @@ function grpHealthHTML() {
   </div>`;
 }
 
+/* ------------------------------------------------------------ the owner's ledger
+
+   Everything on the board, in one list, newest first. /api/group paints the running summary; this is the
+   full log including settled bets, which is what "I run this board" actually means. Server-side it is
+   owner-only and answers 403 to anyone else.
+
+   Guests are told, the first time they open the app, that the person who runs the board sees their
+   tickets. That disclosure is what makes this fair, and it stays. */
+let grpAct = null;
+
+function grpLoadActivity() {
+  if (typeof api !== 'function') return Promise.resolve();
+  return api('/api/group/activity')
+    .then((d) => { grpAct = d; })
+    .catch(() => { grpAct = { failed: true }; });
+}
+const grpActOf = (uid) => (grpAct?.people || []).find((x) => x.uid === uid) || null;
+
+// Closing line value, the one number that means something at this sample size.
+function grpClvBadge(P) {
+  if (!P || !P.clvN) return '';
+  const avg = P.clvAvg;
+  const cls = avg > 0.05 ? 'w' : avg < -0.05 ? 'l' : '';
+  return `<span class="grp-clv ${cls}">CLV ${avg > 0 ? '+' : ''}${avg.toFixed(2)}<small>${Math.round((P.clvBeat || 0) * 100)}% beat · ${P.clvN}</small></span>`;
+}
+
+/* Exact and relative, both. "2h ago" is how you read a log at a glance; the wall-clock stamp is what
+   you need when you are reconstructing what somebody did and when. */
+function grpStamp(iso, ms) {
+  const t = iso ? Date.parse(iso) : ms;
+  if (!t) return '';
+  const day = dayLabel(new Date(t).toISOString());
+  return `${day} ${timeLabel(new Date(t).toISOString())} · ${ago(t)}`;
+}
+/* "home -2.5" is what the record holds; "KC -2.5" is what a person reading a log needs. The game is
+   usually still in memory, so resolve the side to a team when we can and fall back to the stored text
+   when we cannot — an old bet whose week is no longer loaded still has to render. */
+function grpPickTxt(b) {
+  const parts = (b.legs || []).map((l) => {
+    const g = typeof gameById === 'function' ? gameById(l.gid) : null;
+    const who = l.team
+      || (g && (l.side === 'home' ? g.home?.abbr : l.side === 'away' ? g.away?.abbr : null))
+      || (l.side === 'over' ? 'Over' : l.side === 'under' ? 'Under' : l.side || '');
+    const num = l.line != null ? (l.mkt === 't' || l.mkt === 'h1t' ? fmtTot(l.line) : fmtPts(l.line)) : '';
+    return `${who} ${num} ${fmtOdds(l.odds)}`.replace(/\s+/g, ' ').trim();
+  });
+  return parts.join(' + ') || grpLegs(b);
+}
+function grpLedgerRow(b) {
+  const clv = (b.legs || []).map((l) => l.clv).find((c) => c && Number.isFinite(c.pts));
+  const st = b.status === 'won' ? 'w' : b.status === 'lost' ? 'l' : '';
+  const result = b.status === 'open'
+    ? '<small>open</small>'
+    : `<b class="${st}">${esc(fmtMoney(b.net, true))}</b><small>${esc(b.status)}${b.settled ? ` ${esc(ago(b.settled))}` : ''}</small>`;
+  return `<div class="grp-led" data-grp-person="${esc(b.uid)}">
+    <span class="grp-led-w">${esc(b.name)}<small>${esc(grpStamp(b.placed, b.created))}</small></span>
+    <span class="grp-led-p">${esc(grpPickTxt(b))}<small>${esc(b.legs.length > 1 ? `${plural(b.legs.length, 'leg')} parlay` : '')}${esc(b.note ? `${b.legs.length > 1 ? ' · ' : ''}\u201c${b.note}\u201d` : '')}</small></span>
+    <span class="grp-led-s">${esc(fmtMoney(b.stake))}<small>${esc(b.book || 'no book')} ${esc(fmtOdds(b.odds))}</small></span>
+    <span class="grp-led-r">${result}</span>
+    <span class="grp-led-c">${clv ? `${clv.pts > 0 ? '+' : ''}${clv.pts}` : '—'}</span>
+  </div>`;
+}
+
+function grpLedgerHTML() {
+  if (!grpAct) return '<div class="card grp-health"><p class="grp-lede">Loading the log…</p></div>';
+  if (grpAct.failed) return '<div class="card grp-health"><p class="grp-lede bad">Could not load the activity log.</p></div>';
+  const rows = grpAct.bets || [];
+  if (!rows.length) {
+    return '<div class="card grp-health"><p class="grp-lede">No tracked bets on the board yet. Everything anyone logs lands here, settled ones included.</p></div>';
+  }
+  const shown = rows.slice(0, 200);
+  return `<div class="card grp-ledger">
+    <div class="grp-health-h">
+      <span>Everyone&rsquo;s bets</span>
+      <span class="grp-health-n">${esc(plural(rows.length, 'bet'))}${grpAct.capped ? ` of ${grpAct.betsTotal}` : ''} · tap one for that person&rsquo;s log</span>
+    </div>
+    <div class="grp-led-h"><span>Who</span><span>Pick</span><span>Risk</span><span>Result</span><span>CLV</span></div>
+    ${shown.map(grpLedgerRow).join('')}
+    ${rows.length > shown.length ? `<p class="grp-fine" style="padding:12px 16px">Showing the newest ${shown.length}.</p>` : ''}
+  </div>`;
+}
+
 function renderAdmin() {
   const body = $('#adminBody');
   if (!body) return;
-  if (!grpPeople && !grpLoading) { grpLoading = Promise.all([grpLoadGroup(), grpLoadLinks(), grpLoadHealth()]).finally(() => { grpLoading = null; renderAdmin(); }); }
+  if (!grpPeople && !grpLoading) { grpLoading = Promise.all([grpLoadGroup(), grpLoadLinks(), grpLoadHealth(), grpLoadActivity()]).finally(() => { grpLoading = null; renderAdmin(); }); }
   const P = grpPeople || [];
   const open = P.reduce((n, x) => n + x.open.length, 0);
   const atRisk = P.reduce((n, x) => n + x.open.reduce((t, b) => t + (b.stake || 0), 0), 0);
@@ -99,6 +181,8 @@ function renderAdmin() {
     ${grpHealthHTML()}
     <div class="sec-h" style="margin-top:28px"><h2>People</h2><span class="m">${P.length ? 'Tap a name for their log' : ''}</span></div>
     <div class="card grp-list" id="grpPeople"></div>
+    <div class="sec-h" style="margin-top:28px"><h2>Everything logged</h2><span class="m">Every tracked bet on this board, settled included</span></div>
+    ${grpLedgerHTML()}
     <div class="sec-h" style="margin-top:28px"><h2>Share links</h2><span class="m">One per person</span></div>
     <div class="card grp-share">
       <p class="grp-lede">Make a link and send it. They tap it once and they're in — no code to type. Turn a link off and only the phones that used it are out.</p>
@@ -112,6 +196,21 @@ function renderAdmin() {
     <p class="grp-fine">Your own tickets stay in My bets. Nobody here can see them — guests only ever see their own.</p>`;
   grpPaint();
 }
+/* What the summary cannot say: whether they are any good, how often they play, and where they are now.
+   Only rendered when there is something real to report — an empty strip under every name is clutter. */
+function grpAnalyticsHTML(uid) {
+  const P = grpActOf(uid);
+  if (!P || (!P.clvN && !P.n)) return '';
+  const bits = [];
+  if (P.clvN) bits.push(grpClvBadge(P));
+  if (P.n) bits.push(`<span class="grp-a">${esc(P.perWeek >= 0.1 ? `${P.perWeek.toFixed(1)} bets a week` : 'rarely bets')}</span>`);
+  if (P.medStake) bits.push(`<span class="grp-a">typical ${esc(fmtMoney(P.medStake))}${P.maxStake && P.maxStake > P.medStake ? ` · biggest ${esc(fmtMoney(P.maxStake))}` : ''}</span>`);
+  if (P.streak >= 2 && P.streakKind) bits.push(`<span class="grp-a">${P.streak} ${esc(P.streakKind === 'won' ? 'in a row' : 'losses running')}</span>`);
+  if (P.lastBet) bits.push(`<span class="grp-a">last bet ${esc(ago(P.lastBet))}</span>`);
+  if (P.last) bits.push(`<span class="grp-a">${esc(serverNow() - P.last < 10 * 60e3 ? 'on the board now' : `last open ${ago(P.last)}`)}</span>`);
+  if (P.first) bits.push(`<span class="grp-a">joined ${esc(ago(P.first))}${P.via ? ` via ${esc(P.via)}` : ''}</span>`);
+  return bits.length ? `<div class="grp-arow">${bits.join('')}</div>` : '';
+}
 const grpStat = (k, v, sub, cls = '') => `<div class="grp-stat"><span class="grp-stat-k">${esc(k)}</span><b class="${cls}">${esc(v)}</b><span class="grp-stat-s">${esc(sub)}</span></div>`;
 
 // A guest's own card: their name, and the truth about who can see what.
@@ -119,7 +218,7 @@ function grpGuestCard() {
   if (isOwner()) return '';
   return `<div class="card tool grp" id="grpGuest">
     <h3>You on this board</h3>
-    <p>Your bet log is yours and kept private.</p>
+    <p>Set the name the board shows next to your tickets.</p>
     <div class="acct-join">
       <label class="fld">Your name here<input class="inp" id="grpName" autocomplete="off" maxlength="24" value="${esc(S.me?.name || '')}"></label>
       <button class="btn ghost" type="button" data-grp-name>Save</button>
@@ -157,7 +256,8 @@ function grpPersonHTML(P) {
     <span class="grp-p-o">${P.open.length ? `${P.open.length} open<small>${esc(fmtMoney(P.open.reduce((t, b) => t + (b.stake || 0), 0)))} at risk</small>` : '<small>nothing open</small>'}</span>
     <span class="grp-p-r">${done ? `<b class="${P.net > 0 ? 'w' : P.net < 0 ? 'l' : ''}">${esc(fmtMoney(P.net, true))}</b><small>${P.won}-${P.lost}${roi != null ? ` · ${roi > 0 ? '+' : ''}${roi.toFixed(0)}%` : ''}</small>` : '<small>no results yet</small>'}</span>
     <span class="grp-p-c">${ICON.chev}</span>
-  </button>`;
+  </button>
+  ${grpAnalyticsHTML(P.uid)}`;
 }
 
 // Their full log, newest first. Read-only.
@@ -198,31 +298,12 @@ async function grpLoadGroup() {
   if (S.tab === 'admin' && !S.sheet) renderAdmin(); else grpPaint();
 }
 // The group is re-read while the tab is open, so a friend's ticket shows up without a reload.
-setInterval(() => { if (S.tab === 'admin' && !S.sheet && document.visibilityState === 'visible') { grpLoadGroup(); grpLoadHealth().then(() => { if (S.tab === 'admin' && !S.sheet) renderAdmin(); }); } }, 20000);
+setInterval(() => { if (S.tab === 'admin' && !S.sheet && document.visibilityState === 'visible') { grpLoadGroup(); Promise.all([grpLoadHealth(), grpLoadActivity()]).then(() => { if (S.tab === 'admin' && !S.sheet) renderAdmin(); }); } }, 20000);
 function grpErr(msg) { const e = $('#grpErr'); if (e) e.textContent = msg || ''; }
-
-// ------------------------------------------------------------ the first screen a guest sees
-function grpWelcome() {
-  S.sheet = { kind: 'welcome' };
-  $('#dlgBody').innerHTML = `<h2 id="dlgTitle">Welcome to the board</h2>
-    <p class="lede">${esc(S.me?.owner ? `${S.me.owner}'s` : 'This')} board: every book's number side by side, line moves as they happen, and a place to keep your tickets.</p>
-    <label class="fld" style="margin-top:20px">What should the board call you?<input class="inp" id="grpWName" autocomplete="off" maxlength="24" placeholder="First name"></label>
-    <div class="err" id="grpWErr" role="alert"></div>
-    <button class="btn" type="button" data-grp-wsave>Start</button>
-    <p class="grp-fine">Nothing you type here reaches a sportsbook — bets are placed at the book, in your own account.</p>`;
-  showSheet('welcome', true);
-  setTimeout(() => $('#grpWName')?.focus(), 80);
-}
-// Shown once, the first time a guest opens the app with no name saved.
-function grpMaybeWelcome() {
-  if (isOwner() || S.me?.named || S.sheet || store.get('welcomed', false)) return;
-  store.set('welcomed', true);
-  grpWelcome();
-}
 
 // ------------------------------------------------------------ clicks
 document.addEventListener('click', async (ev) => {
-  const t = ev.target.closest('[data-grp-make],[data-grp-copy],[data-grp-qr],[data-grp-revoke],[data-grp-person],[data-grp-name],[data-grp-wsave]');
+  const t = ev.target.closest('[data-grp-make],[data-grp-copy],[data-grp-qr],[data-grp-revoke],[data-grp-person],[data-grp-name]');
   if (!t) return;
   const d = t.dataset;
 
@@ -252,17 +333,15 @@ document.addEventListener('click', async (ev) => {
     return;
   }
   if (d.grpPerson) { grpPersonSheet(d.grpPerson); return; }
-  if (d.grpName !== undefined || d.grpWsave !== undefined) {
-    const welcome = d.grpWsave !== undefined;
-    const name = String($(welcome ? '#grpWName' : '#grpName')?.value || '').trim();
-    const err = (m) => { const e = $(welcome ? '#grpWErr' : '#grpErr'); if (e) e.textContent = m; };
-    if (!name) { err('Type a name the board can call you.'); return; }
-    err('');
+  if (d.grpName !== undefined) {
+    const name = String($('#grpName')?.value || '').trim();
+    if (!name) { grpErr('Type a name the board can call you.'); return; }
+    grpErr('');
     try {
       const r = await api('/api/me/name', { method: 'POST', body: JSON.stringify({ name }) });
       S.me = { ...S.me, name: r.name, named: true };
-      if (welcome) { closeSheet(); toastText(`You're in, ${r.name}.`); } else toastText('Saved.');
-    } catch (e) { err(e.message); }
+      toastText('Saved.');
+    } catch (e) { grpErr(e.message); }
   }
 });
 

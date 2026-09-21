@@ -59,7 +59,6 @@ function loadSnapshot(d) {
   if (d.week) putWeek(d.week, { tracked: true });
   if (!S.boardWeek || !S.weeks.has(S.boardWeek)) S.boardWeek = S.def;
   S.moves = mergeMoves(d.week?.moves || [], S.moves);
-  if (typeof grpMaybeWelcome === 'function') grpMaybeWelcome();
   invalidate();
 }
 const mergeMoves = (a, b) => [...new Map([...a, ...b].map((m) => [m.id, m])).values()].sort((x, y) => y.t - x.t).slice(0, 120);

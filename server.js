@@ -993,6 +993,100 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, { name: P.name || '', bets: Bets.list(pm[1]).map(({ owner, ...b }) => b) });
     }
     // ---- your log: status, your name, link another device, claim pre-accounts bets
+    /* Owner-only, and deliberately richer than /api/group.
+
+       A shared board's owner can already see who is on it and what they have running. What they cannot
+       see is the shape of it: who is actually any good, who has gone quiet, who is betting more than
+       they used to. All of that is derivable from records already on disk — no new tracking, nothing
+       collected that was not already being stored to run the board.
+
+       The sharpest column here is closing line value. Win rate over a handful of bets is mostly noise;
+       whether someone consistently beats the number they bet into is the one measure that means
+       something at this sample size, and every settled leg already carries it.
+
+       The app makes no privacy claim to a guest in either direction — it does not announce this view, and
+       it must not tell anyone their log is private, because it is not. */
+    if (p === '/api/group/activity' && M === 'GET') {
+      if (role !== 'owner') return ownerOnly();
+      const by = Bets.byOwner();
+      const people = Group.people(uid);
+      const nameOf = new Map(people.map((P) => [P.uid, P.name || 'Someone']));
+      const median = (a) => { if (!a.length) return null; const v = [...a].sort((x, y) => x - y); const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+      const timeline = [];
+      const rows = people.map((P) => {
+        const bets = by.get(P.uid) || [];
+        const done = bets.filter((b) => b.status === 'won' || b.status === 'lost' || b.status === 'push');
+        const open = bets.filter((b) => b.status === 'open');
+        const stakes = bets.map((b) => b.stake).filter((x) => x > 0);
+        const clvPts = [], mkts = {}, books = {};
+        for (const b of bets) {
+          for (const l of b.legs || []) {
+            if (l.clv && Number.isFinite(l.clv.pts)) clvPts.push(l.clv.pts);
+            if (l.mkt) mkts[l.mkt] = (mkts[l.mkt] || 0) + 1;
+          }
+          if (b.book) books[b.book] = (books[b.book] || 0) + 1;
+          const t = Date.parse(b.placed) || b.created || 0;
+          if (t) timeline.push({ t, kind: 'placed', uid: P.uid, name: nameOf.get(P.uid), stake: b.stake, book: b.book || '', legs: (b.legs || []).length, status: b.status });
+          if (b.settled) timeline.push({ t: b.settled, kind: b.status, uid: P.uid, name: nameOf.get(P.uid), stake: b.stake, net: b.net, legs: (b.legs || []).length });
+        }
+        if (P.first) timeline.push({ t: P.first, kind: 'joined', uid: P.uid, name: nameOf.get(P.uid), via: P.via || null });
+        // Current run, newest settled first.
+        const seq = done.slice().sort((a, b) => (b.settled || 0) - (a.settled || 0));
+        let streak = 0, dir = null;
+        for (const b of seq) {
+          if (b.status === 'push') continue;
+          if (dir == null) { dir = b.status; streak = 1; } else if (b.status === dir) streak++; else break;
+        }
+        const days = P.first ? Math.max(1, Math.round((Date.now() - P.first) / 86400e3)) : 1;
+        const risked = done.reduce((t, b) => t + (b.stake || 0), 0);
+        const net = done.reduce((t, b) => t + (b.net || 0), 0);
+        return {
+          uid: P.uid, name: P.name || '', via: P.via || null, first: P.first || null, last: P.last || null,
+          n: bets.length, openN: open.length,
+          openRisk: open.reduce((t, b) => t + (b.stake || 0), 0),
+          won: done.filter((b) => b.status === 'won').length,
+          lost: done.filter((b) => b.status === 'lost').length,
+          push: done.filter((b) => b.status === 'push').length,
+          net, risked, roi: risked > 0 ? net / risked : null,
+          avgStake: stakes.length ? stakes.reduce((a, b) => a + b, 0) / stakes.length : null,
+          maxStake: stakes.length ? Math.max(...stakes) : null,
+          medStake: median(stakes),
+          clvN: clvPts.length,
+          clvAvg: clvPts.length ? clvPts.reduce((a, b) => a + b, 0) / clvPts.length : null,
+          clvBeat: clvPts.length ? clvPts.filter((x) => x > 0).length / clvPts.length : null,
+          perWeek: bets.length / Math.max(1, days / 7),
+          mkts, books, streak, streakKind: dir,
+          lastBet: bets.length ? Math.max(...bets.map((b) => Date.parse(b.placed) || b.created || 0)) : null,
+        };
+      });
+      timeline.sort((a, b) => b.t - a.t);
+      /* Every tracked bet on the board, settled ones included, newest first.
+
+         /api/group deliberately sends only what is running plus counts for the rest, because it is the
+         summary a shared board paints constantly. This is the owner's ledger: the whole log, with legs
+         and closing line value, so nothing about the board is visible to the app but invisible to the
+         person who runs it. Capped so one very busy season cannot make the response unbounded; the cap
+         is reported rather than silently applied. */
+      const all = [];
+      for (const [owner, list] of by) {
+        if (!nameOf.has(owner) && owner !== uid) continue;   // orphaned rows are not somebody's activity
+        for (const b of list) {
+          all.push({
+            id: b.id, uid: owner, name: owner === uid ? 'You' : (nameOf.get(owner) || 'Someone'),
+            placed: b.placed, created: b.created, settled: b.settled,
+            book: b.book || '', stake: b.stake, odds: b.odds, status: b.status, net: b.net,
+            note: b.note || '',
+            legs: (b.legs || []).map((l) => ({ gid: l.gid, mkt: l.mkt, side: l.side, line: l.line, odds: l.odds, team: l.team || null, state: l.state || null, clv: l.clv || null })),
+          });
+        }
+      }
+      all.sort((a, b) => (Date.parse(b.placed) || b.created || 0) - (Date.parse(a.placed) || a.created || 0));
+      const CAP = 400;
+      return sendJSON(res, 200, {
+        now: Date.now(), people: rows, timeline: timeline.slice(0, 60),
+        bets: all.slice(0, CAP), betsTotal: all.length, capped: all.length > CAP,
+      });
+    }
     if (p === '/api/me' && M === 'GET') return sendJSON(res, 200, { role, name: Group.person(uid)?.name || '', bets: Bets.list(uid).length, claimable: OWNER_CODE ? Bets.unowned() : 0 });
     if (p === '/api/me/name' && M === 'POST') {
       try { return sendJSON(res, 200, { name: Group.setName(uid, (await readBody(req)).name) }); } catch (e) { return sendJSON(res, 400, { error: e.message }); }
