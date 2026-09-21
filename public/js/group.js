@@ -217,6 +217,7 @@ function grpAnalyticsHTML(uid) {
   if (P.last) bits.push(`<span class="grp-a">${esc(serverNow() - P.last < 10 * 60e3 ? 'on the board now' : `last open ${ago(P.last)}`)}</span>`);
   if (P.first) bits.push(`<span class="grp-a">joined ${esc(ago(P.first))}${P.via ? ` via ${esc(P.via)}` : ''}</span>`);
   if (P.dev) bits.push(`<span class="grp-a">${esc(P.dev)}</span>`);
+  if (P.addr) bits.push(`<span class="grp-a grp-dev">${esc(P.addr)}</span>`);
   if (P.opens) bits.push(`<span class="grp-a">opened ${esc(plural(P.opens, 'time'))}</span>`);
   // A row is a device, not a person: the id is the only way to tell two phones of the same name apart.
   bits.push(`<span class="grp-a grp-dev" title="device id">${esc(P.uid.slice(0, 8))}</span>`);
@@ -303,6 +304,7 @@ async function grpPersonSheet(uid) {
   };
   const facts = [];
   if (A?.dev) facts.push(A.dev);
+  if (A?.addr) facts.push(A.addr);
   if (A?.opens) facts.push(`opened ${plural(A.opens, 'time')}`);
   if (P?.last) facts.push(serverNow() - P.last < 10 * 60e3 ? 'on the board now' : `last open ${ago(P.last)}`);
   if (P?.first) facts.push(`joined ${ago(P.first)}${P?.via ? ` via ${P.via}` : ''}`);

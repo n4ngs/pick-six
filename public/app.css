@@ -709,3 +709,86 @@ textarea.inp{height:72px;padding:12px 14px;font-size:15px;font-weight:500;resize
 .pills.books{margin-top:6px}
 .pills.books .pbtn .tag.sharp{height:14px;padding:0 4px;font-size:9px;margin-left:4px}
 @media (min-width:1024px){.pills.books{display:none}}
+
+/* ═══════════════════════════════════════════════════════════════════ design pass
+
+   Everything below refines what is already here rather than rearranging it: elevation, type weight,
+   state and motion. No layout is moved, so every screen keeps the structure it was designed with and
+   gains the depth it was missing.
+
+   The rule that keeps it fast: this pass adds no request, no font, no image and no script. It animates
+   only transform and opacity, which the compositor handles without touching layout or paint, and it
+   never puts a shadow or a blur on a row that repeats down a long list — those get a hairline instead.
+   app.css already disables every transition under prefers-reduced-motion. */
+
+/* ── elevation ──────────────────────────────────────────────────────────────
+   A flat fill on a flat background is the reason a dense screen reads as dull: nothing sits above
+   anything else. One hairline plus one soft shadow is enough to lift a surface; in dark mode the
+   hairline goes on the top edge only, which is how real light behaves and reads as depth rather than
+   as a box drawn around the content. */
+:root{
+  --edge:rgba(11,11,13,.06);
+  --lift:0 1px 2px rgba(11,11,13,.04), 0 6px 16px -8px rgba(11,11,13,.12);
+  --lift-2:0 1px 2px rgba(11,11,13,.06), 0 16px 32px -12px rgba(11,11,13,.18);
+  --sheen:none;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --edge:rgba(255,255,255,.07);
+    --lift:0 1px 2px rgba(0,0,0,.5), 0 8px 20px -10px rgba(0,0,0,.6);
+    --lift-2:0 2px 4px rgba(0,0,0,.6), 0 20px 40px -16px rgba(0,0,0,.75);
+    --sheen:inset 0 1px 0 rgba(255,255,255,.05);
+  }
+}
+:root[data-theme="dark"]{
+  --edge:rgba(255,255,255,.07);
+  --lift:0 1px 2px rgba(0,0,0,.5), 0 8px 20px -10px rgba(0,0,0,.6);
+  --lift-2:0 2px 4px rgba(0,0,0,.6), 0 20px 40px -16px rgba(0,0,0,.75);
+  --sheen:inset 0 1px 0 rgba(255,255,255,.05);
+}
+
+.card{box-shadow:var(--lift), var(--sheen);border:1px solid var(--edge)}
+/* Cards that are really list containers keep the lift but lose the inner rule doubling. */
+.card.chart,.card.glance,.card.learn{box-shadow:var(--lift), var(--sheen)}
+
+/* ── headings ───────────────────────────────────────────────────────────────
+   A section title competing with body copy at 22px is why the eye has nowhere to land. */
+.sec-h h2{font-size:26px;letter-spacing:-.03em;line-height:1.15}
+.sec-h .more,.sec-h .m{font-size:13px;color:var(--ink-3);font-weight:500}
+.sub-h{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);
+  margin-bottom:10px}
+.sub-h span{font-size:11px;letter-spacing:0;text-transform:none;color:var(--ink-3);font-weight:500}
+.view-h h1{letter-spacing:-.035em}
+
+/* ── numbers ────────────────────────────────────────────────────────────────
+   This is a board of numbers; they should read like the subject, not like labels. */
+.num{font-feature-settings:"tnum" 1,"ss01" 1}
+.glance .v,.grp-stat b{letter-spacing:-.04em}
+
+/* ── state ──────────────────────────────────────────────────────────────────
+   A press that answers immediately is most of what "responsive" means to a hand on glass. Transform
+   only: no layout, no paint, no jank on a phone mid-game. */
+.btn,.chip,.pbtn,.seg button,.tag{transition:transform .12s var(--ease), background-color .15s var(--ease), color .15s var(--ease)}
+.btn:active,.chip:active,.pbtn:active,.seg button:active{transform:scale(.97)}
+.btn{box-shadow:var(--lift)}
+.btn.ghost{border:1px solid var(--edge)}
+.chip,.pbtn{border:1px solid var(--edge)}
+.seg button[aria-pressed="true"]{box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.card button:active,.gm:active,.grp-p:active{transform:scale(.995)}
+
+/* ── empty states ───────────────────────────────────────────────────────────
+   A quiet board is the normal state of this app for hours at a time, so the empty case is not an edge
+   case — it is a screen people will actually sit and look at. It should feel composed, not unfinished. */
+.empty{padding:var(--s5) var(--s3);line-height:1.5}
+.empty b{font-size:18px;letter-spacing:-.02em;margin-bottom:6px}
+.empty::before{content:"";display:block;width:34px;height:34px;margin:0 auto 14px;border-radius:12px;
+  background:var(--fill);box-shadow:var(--sheen)}
+
+/* ── the tab bar ────────────────────────────────────────────────────────────
+   The one piece of chrome always on screen. */
+.tabbar{box-shadow:0 -1px 0 var(--edge)}
+
+/* ── lists ──────────────────────────────────────────────────────────────────
+   Rows repeat, so they get hairlines and a hover tint, never a shadow each. */
+.grp-p,.gm{transition:background-color .12s var(--ease), transform .12s var(--ease)}
+.grp-p:hover,.gm:hover{background:var(--fill)}
