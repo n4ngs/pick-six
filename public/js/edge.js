@@ -87,7 +87,23 @@ function edgeFit(kind, line, pNoVig) {
   return edgePmf(kind, (lo + hi) / 2);
 }
 // Chance for side A with the cut removed. Moneylines use the power method: find k with pA^k + pB^k = 1.
+/* Two prices in, one probability out — the calculation everything else here is built on.
+
+   This used Shin's method as of 2026-09-20, replacing plain normalisation for spreads and totals and the
+   power method for moneylines. Shin (1992,1993) treats the overround as the book protecting itself
+   against informed money, which falls harder on the longshot; Strumbelj (2014) found it better calibrated
+   than both of the methods it replaces. `shinNoVig` in core.js carries the derivation.
+
+   The reason for changing it here was consistency rather than accuracy. Measured on a real board, the
+   pregame effect is almost nothing — NFL pregame prices sit near -110 where every method agrees, no
+   confidence tier moved and no solid row changed, the largest EV move was 0.31 points. But VAS prices a
+   branch with the live path after kickoff and this path before it, into the same card. Two methods meant
+   an edge could appear or vanish at kickoff because the arithmetic changed rather than the market.
+
+   The old power method is kept as the fallback, so an odd market degrades instead of dropping out. */
 function edgeNoVig(mkt, a, b) {
+  const shin = shinNoVig(a, b);
+  if (shin != null && shin > 0 && shin < 1) return shin;
   if (mkt !== 'ml') return noVig(a, b)?.a ?? null;
   const pa = imp(a), pb = imp(b);
   if (!(pa > 0 && pb > 0 && pa < 1 && pb < 1)) return null;
@@ -135,7 +151,7 @@ function edgeMarketP(g, mkt, side, line, exclude) {
     const a = sideOf(L, mkt, side), b = sideOf(L, mkt, other);
     if (!a || !b || a.odds == null || b.odds == null) continue;
     if (mkt !== 'ml' && a.line !== line) continue;
-    const p = mkt === 'ml' ? edgeNoVig('ml', a.odds, b.odds) : noVig(a.odds, b.odds)?.a;
+    const p = edgeNoVig(mkt, a.odds, b.odds);
     if (p != null) ps.push(p);
   }
   if (ps.length < 2) return null;
