@@ -273,7 +273,79 @@ function vasNotePrices(g) {
       vasPushPrice(vasPriceKey(g.id, '__mkt', mkt), t, ps.length % 2 ? ps[mid] : (ps[mid - 1] + ps[mid]) / 2);
     }
   }
+  try { vasFoldSpeed(g); } catch { /* a profile is a nicety; never let it break the board */ }
 }
+/* ------------------------------------------------- how fast each book is, kept across sessions
+
+   `vasResponse` measures a book's speed within one game, which dies on reload. The useful version of
+   that number is the one you have BEFORE kickoff: a book that has answered the market at a median of 68
+   seconds across forty-odd measured moves is the book to have open when the next score lands. That is a
+   fact you can act on ahead of time, which almost nothing else in a live board can claim.
+
+   It accumulates per device in localStorage rather than on the server, deliberately. The server records
+   pregame lines per book but live prices only as a consensus, so a shared profile would need a new
+   per-book live series in the persistence layer — real work, real data volume, and not something to
+   slip in unreviewed. This gets the same number in front of the user now, honestly labelled as this
+   device's observations, and the server version can replace it later without changing the display.
+
+   Each market move folds in at most once: the fold key carries the move's timestamp, so re-renders and
+   reloads cannot count the same response twice. */
+const VAS_SPEED_KEY = 'bookspeed';
+const VAS_SPEED_MAX = 60;          // samples kept per book
+const vasFolded = new Set();
+
+function vasSpeedAll() {
+  const v = typeof store !== 'undefined' ? store.get(VAS_SPEED_KEY, {}) : {};
+  return v && typeof v === 'object' ? v : {};
+}
+function vasSpeedOf(k) {
+  const a = vasSpeedAll()[k];
+  if (!a || !Array.isArray(a.s) || a.s.length < VAS_LAG_MIN_N) return null;
+  const v = [...a.s].sort((x, y) => x - y);
+  const mid = v.length >> 1;
+  return { ms: v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2, n: v.length };
+}
+// Fold this game's newly-observed responses into the stored profile. Cheap, idempotent, bounded.
+function vasFoldSpeed(g) {
+  if (typeof store === 'undefined' || !g) return;
+  let all = null;
+  for (const k of vasBettable()) {
+    for (const mkt of ['ml', 's', 't']) {
+      const bk = vasPriceTrail.get(vasPriceKey(g.id, k, mkt));
+      const mk = vasPriceTrail.get(vasPriceKey(g.id, '__mkt', mkt));
+      if (!bk || !mk || mk.length < 2) continue;
+      for (let i = 1; i < mk.length; i++) {
+        const tm = mk[i][0];
+        if (Math.abs(mk[i][1] - mk[i - 1][1]) < VAS_LAG_MIN_DRIFT) continue;
+        const key = `${g.id}|${k}|${mkt}|${tm}`;
+        if (vasFolded.has(key)) continue;
+        const next = bk.find((x) => x[0] >= tm);
+        if (!next) continue;                       // still waiting: fold it when the book answers
+        vasFolded.add(key);
+        all = all || vasSpeedAll();
+        const rec = (all[k] ||= { s: [] });
+        rec.s.push(next[0] - tm);
+        if (rec.s.length > VAS_SPEED_MAX) rec.s = rec.s.slice(-VAS_SPEED_MAX);
+        rec.at = serverNow();
+      }
+    }
+  }
+  if (vasFolded.size > 2000) vasFolded.clear();
+  if (all) store.set(VAS_SPEED_KEY, all);
+}
+
+/* The market's travel since a book stopped tracking it.
+
+   The subtle part: start from the market's last point AT OR BEFORE the book's last move — the value the
+   book was still correct about — not the first point after it. Starting after it silently throws away
+   the jump that happened in between, which is exactly the jump that made the book stale. */
+function vasDriftSince(mk, bookLast) {
+  let i = 0;
+  for (let j = 0; j < mk.length; j++) if (mk[j][0] <= bookLast) i = j;
+  const seg = mk.slice(i);
+  return seg.length >= 2 ? seg[seg.length - 1][1] - seg[0][1] : 0;
+}
+
 /* How far behind a moved market this book is, in ms — or null when it is keeping up (or we cannot tell).
    Needs a real move on both series, so a quiet market never makes every book look stale. */
 function vasLagOf(g, k, mkt) {
@@ -282,13 +354,10 @@ function vasLagOf(g, k, mkt) {
   const mk = vasPriceTrail.get(vasPriceKey(g.id, '__mkt', mkt));
   if (!bk || !mk || bk.length < 1 || mk.length < 2) return null;
   const bookLast = bk[bk.length - 1][0];
-  const mktLast = mk[mk.length - 1][0];
-  const behind = mktLast - bookLast;
+  const behind = mk[mk.length - 1][0] - bookLast;
   if (!(behind >= VAS_LAG_MS)) return null;
-  // How far the market travelled while this book stood still, in probability points.
-  const moved = mk.filter((x) => x[0] >= bookLast);
-  const drift = moved.length >= 2 ? Math.abs(moved[moved.length - 1][1] - moved[0][1]) : null;
-  return { ms: behind, pts: drift != null ? drift * 100 : null };
+  const drift = Math.abs(vasDriftSince(mk, bookLast));
+  return { ms: behind, pts: drift * 100 };
 }
 function vasLagTxt(g, k, mkt) {
   const l = vasLagOf(g, k, mkt);
@@ -405,9 +474,8 @@ function vasLagRows(g) {
       const bk = vasPriceTrail.get(vasPriceKey(g.id, k, mkt));
       if (!mk || !bk || mk.length < 2 || !bk.length) continue;
       const bookLast = bk[bk.length - 1][0];
-      const moved = mk.filter((x) => x[0] >= bookLast);
       const behind = mk[mk.length - 1][0] - bookLast;
-      const drift = moved.length >= 2 ? moved[moved.length - 1][1] - moved[0][1] : 0;
+      const drift = vasDriftSince(mk, bookLast);
       const habit = vasResponse(g.id, k, mkt);
       if (behind < VAS_LAG_MS || Math.abs(drift) < VAS_LAG_MIN_DRIFT) {
         if (habit) out.push({ gid: g.id, book: k, mkt, behind: 0, drift: 0, habit, quiet: true });
@@ -448,11 +516,17 @@ function vasLagPanel(g) {
   /* A book that turns with the median is not "following it in 0 seconds" — it is one of the books the
      median is made of. Say that instead of printing a number that reads like a stopwatch error. */
   const habitTxt = (h) => (h.ms < 5000 ? 'moves with the market' : `follows the market in ${vasAgo(h.ms)}`);
-  const habitLi = (r) => `<li class="vas-lag-row vas-lag-habit">
-    <b>${esc(bookName(r.book))}</b>
-    <span class="vas-lag-n">${esc(habitTxt(r.habit))}</span>
-    <span class="vas-lag-d">over ${esc(plural(r.habit.n, 'market move'))}</span>
-  </li>`;
+  const habitLi = (r) => {
+    // Prefer the profile built across sessions once it has seen more than this game has.
+    const kept = vasSpeedOf(r.book);
+    const use = kept && kept.n > r.habit.n ? kept : r.habit;
+    const scope = use === kept ? `over ${plural(use.n, 'move')} on this device` : `over ${plural(use.n, 'market move')} here`;
+    return `<li class="vas-lag-row vas-lag-habit">
+      <b>${esc(bookName(r.book))}</b>
+      <span class="vas-lag-n">${esc(habitTxt(use))}</span>
+      <span class="vas-lag-d">${esc(scope)}</span>
+    </li>`;
+  };
   return `<div class="vas-lag">
     <h4 class="vas-h4">Who is behind</h4>
     ${live.length
@@ -463,11 +537,60 @@ function vasLagPanel(g) {
   </div>`;
 }
 
+/* ------------------------------------------------------------------ the alert
+
+   The board only helps if you are looking at it, and the moment that matters is short: a score lands,
+   the market turns, and one book has not. This is the one place VAS reaches out rather than waiting to
+   be read.
+
+   It has to be rarer than the board, or it is noise. The board shows anything 45s behind; this waits for
+   a full minute behind AND at least a point and a half of market travel. It also fires once per episode,
+   never once per render: the dedupe key carries the timestamp of the book's last move, so the moment the
+   book finally moves the key changes on its own and the next genuine episode can speak. No timers, no
+   cooldown bookkeeping, and nothing to reset when a game ends.
+
+   It obeys the app's existing alert switch (off / my bets and teams / everything) exactly like line-move
+   alerts do, because a user who turned alerts down meant it. And the words stay flat: what is behind, by
+   how much, which side still has the old number. Never "bet this". */
+const VAS_ALERT_BEHIND = 60e3;     // a full minute, against the board's 45s
+const VAS_ALERT_DRIFT = 1.5;       // probability points the market travelled meanwhile
+const vasAlerted = new Set();
+
+function vasAnnounceLag() {
+  if (typeof S === 'undefined' || S.alerts === 'off') return;
+  if (typeof toast !== 'function' || typeof cares !== 'function') return;
+  let games = [];
+  try { games = allGames().filter(vasLive); } catch { return; }
+  for (const g of games) {
+    if (!cares(g.id)) continue;
+    for (const r of vasLagRows(g)) {
+      if (r.quiet || r.behind < VAS_ALERT_BEHIND || r.drift < VAS_ALERT_DRIFT) continue;
+      const bk = vasPriceTrail.get(vasPriceKey(g.id, r.book, r.mkt));
+      const since = bk && bk.length ? bk[bk.length - 1][0] : 0;   // this episode began when the book last moved
+      const key = `${g.id}|${r.book}|${r.mkt}|${since}`;
+      if (vasAlerted.has(key)) continue;
+      vasAlerted.add(key);
+      if (vasAlerted.size > 400) vasAlerted.clear();              // bounded; a Sunday never gets close
+      const what = r.odds != null ? `${vasSideWord(g, r.mkt, r.side, r.line)} still ${fmtOdds(r.odds)}` : 'its number has not moved';
+      const line = `${what} · market moved ${r.drift.toFixed(1)} pts · ${vasAbbr(g, 'away')} @ ${vasAbbr(g, 'home')}`;
+      try {
+        toast({ logoUrl: g?.home?.logo, kicker: 'Behind the market', title: `${bookName(r.book)} ${vasAgo(r.behind)} behind`, line, open: g.id });
+        if (typeof chime === 'function') chime(false);
+        if (typeof notify === 'function') notify(`Behind the market: ${bookName(r.book)}`, line, key);
+      } catch { /* an alert must never take the tab down */ }
+      return;   // one at a time. A board where four things shout at once is a board nobody reads.
+    }
+  }
+}
+
 // The ranked strip across every live game, for the Live tab.
 function vasLagStrip() {
   let games = [];
   try { games = allGames().filter(vasLive); } catch { return ''; }
   const rows = [];
+  // Keep the trail warm here too. The cards also do this, but they can be gated off, and a lag board
+  // whose history only fills when another feature happens to run is a lag board that reads empty.
+  for (const g of games) { try { vasNotePrices(g); } catch { /* a bad game must not stop the strip */ } }
   for (const g of games) for (const r of vasLagRows(g)) if (!r.quiet) rows.push({ ...r, g });
   if (!rows.length) return '';
   rows.sort((a, b) => (b.drift - a.drift) || (b.behind - a.behind));
@@ -1327,8 +1450,9 @@ function vasRenderLive() {
   catch (e) { html = ''; if (typeof console !== 'undefined') console.warn('vas: live strip failed', e); }
   if (sec.dataset.html !== html) { sec.innerHTML = html; sec.dataset.html = html; }
   sec.hidden = !html;
+  try { vasAnnounceLag(); } catch (e) { if (typeof console !== 'undefined') console.warn('vas: lag alert failed', e); }
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { vasTriggers, vasTree, vasCard, vasPanel, vasLiveStrip, vasRenderLive, vasLagRows, vasLagPanel, vasLagStrip, vasResponse };
+  module.exports = { vasTriggers, vasTree, vasCard, vasPanel, vasLiveStrip, vasRenderLive, vasLagRows, vasLagPanel, vasLagStrip, vasResponse, vasAnnounceLag, vasSpeedOf, vasFoldSpeed };
 }
