@@ -914,7 +914,7 @@ const server = http.createServer(async (req, res) => {
     const html = indexHTML().replace('<link rel="manifest" href="manifest.webmanifest">', link + stash);
     return sendBody(res, 200, html, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store', vary: 'cookie' });
   }
-  Group.note(uid, Group.byToken(cookieOf(req).ps_key || '')?.id || null, { ua: req.headers['user-agent'], addr: clientIp(req) });
+  Group.note(uid, Group.byToken(cookieOf(req).ps_key || '')?.id || null, { ua: req.headers['user-agent'], addr: clientIp(req), self: role === 'owner' });
   if (M !== 'GET' && M !== 'HEAD' && p.startsWith('/api/') && !writeBudget(uid)) return sendJSON(res, 429, { error: 'That\u2019s a lot of changes at once. Give it five minutes.' });
   const ownerOnly = () => sendJSON(res, 403, { error: 'Only the person who runs this board can do that.' });
   try {
@@ -1009,7 +1009,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/group/activity' && M === 'GET') {
       if (role !== 'owner') return ownerOnly();
       const by = Bets.byOwner();
-      const people = Group.people(uid);
+      const people = Group.people();   // every device, the owner's own included and marked below
       const nameOf = new Map(people.map((P) => [P.uid, P.name || 'Someone']));
       const median = (a) => { if (!a.length) return null; const v = [...a].sort((x, y) => x - y); const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
       const timeline = [];
@@ -1042,7 +1042,7 @@ const server = http.createServer(async (req, res) => {
         const net = done.reduce((t, b) => t + (b.net || 0), 0);
         return {
           uid: P.uid, name: P.name || '', via: P.via || null, first: P.first || null, last: P.last || null,
-          dev: P.dev || '', addr: P.addr || '', opens: P.opens || 0, seen: P.seen || [],
+          dev: P.dev || '', addr: P.addr || '', opens: P.opens || 0, seen: P.seen || [], self: P.uid === uid,
           n: bets.length, openN: open.length,
           openRisk: open.reduce((t, b) => t + (b.stake || 0), 0),
           won: done.filter((b) => b.status === 'won').length,

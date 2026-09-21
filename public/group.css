@@ -132,3 +132,5 @@
 .grp-b-clv{font-weight:600}
 .grp-b-clv.w{color:var(--win)}
 .grp-b-clv.l{color:var(--accent)}
+.grp-self{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--fill);
+  font-size:10px;font-style:normal;font-weight:600;letter-spacing:.03em;color:var(--ink-3);vertical-align:middle}

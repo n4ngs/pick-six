@@ -99,7 +99,7 @@ function grpLoadActivity() {
 let grpSweepArmed = false;
 // Rows that never named themselves and never logged a bet — the residue of testing a link.
 function grpIdleCount() {
-  return (grpAct?.people || []).filter((x) => !x.name && !x.n).length;
+  return (grpAct?.people || []).filter((x) => !x.name && !x.n && !x.self).length;
 }
 const grpActOf = (uid) => (grpAct?.people || []).find((x) => x.uid === uid) || null;
 
@@ -221,8 +221,10 @@ function grpAnalyticsHTML(uid) {
   if (P.opens) bits.push(`<span class="grp-a">opened ${esc(plural(P.opens, 'time'))}</span>`);
   // A row is a device, not a person: the id is the only way to tell two phones of the same name apart.
   bits.push(`<span class="grp-a grp-dev" title="device id">${esc(P.uid.slice(0, 8))}</span>`);
-  const armed = grpArmed === P.uid;
-  bits.push(`<button type="button" class="grp-clear${armed ? ' armed' : ''}" data-grp-clear="${esc(P.uid)}">${armed ? `Clear this device${P.n ? ` and ${esc(plural(P.n, 'bet'))}` : ''}?` : 'Clear'}</button>`);
+  if (!P.self) {
+    const armed = grpArmed === P.uid;
+    bits.push(`<button type="button" class="grp-clear${armed ? ' armed' : ''}" data-grp-clear="${esc(P.uid)}">${armed ? `Clear this device${P.n ? ` and ${esc(plural(P.n, 'bet'))}` : ''}?` : 'Clear'}</button>`);
+  }
   return bits.length ? `<div class="grp-arow">${bits.join('')}</div>` : '';
 }
 const grpStat = (k, v, sub, cls = '') => `<div class="grp-stat"><span class="grp-stat-k">${esc(k)}</span><b class="${cls}">${esc(v)}</b><span class="grp-stat-s">${esc(sub)}</span></div>`;
@@ -263,10 +265,11 @@ function grpPaint() {
 
 // One person, at a glance: what they have running and how they've done.
 function grpPersonHTML(P) {
+  const A0 = grpActOf(P.uid);
   const done = P.won + P.lost;
   const roi = P.risk ? (P.net / P.risk) * 100 : null;
   return `<button type="button" class="grp-p" data-grp-person="${esc(P.uid)}">
-    <span class="grp-p-n">${esc(P.name || 'Someone')}${P.via ? `<small>${esc(P.via)}${P.last ? ` · ${esc(ago(P.last))}` : ''}</small>` : ''}</span>
+    <span class="grp-p-n">${esc(P.name || (A0?.self ? 'You' : 'Someone'))}${A0?.self ? '<em class="grp-self">this device</em>' : ''}${P.via ? `<small>${esc(P.via)}${P.last ? ` · ${esc(ago(P.last))}` : ''}</small>` : ''}</span>
     <span class="grp-p-o">${P.open.length ? `${P.open.length} open<small>${esc(fmtMoney(P.open.reduce((t, b) => t + (b.stake || 0), 0)))} at risk</small>` : '<small>nothing open</small>'}</span>
     <span class="grp-p-r">${done ? `<b class="${P.net > 0 ? 'w' : P.net < 0 ? 'l' : ''}">${esc(fmtMoney(P.net, true))}</b><small>${P.won}-${P.lost}${roi != null ? ` · ${roi > 0 ? '+' : ''}${roi.toFixed(0)}%` : ''}</small>` : '<small>no results yet</small>'}</span>
     <span class="grp-p-c">${ICON.chev}</span>
