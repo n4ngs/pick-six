@@ -7,8 +7,13 @@
    with its unified chronological timeline and the admin actions that apply to it. */
 
 (function () {
-  var S = { view: 'overview', data: {}, filter: {} };
-  var api = function (path) { return fetch('/api/security/' + path, { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); }); };
+  var S = { view: 'overview', data: {}, filter: {}, all: false };
+  var api = function (path) {
+    // All-apps mode reads the aggregate route, which merges this board with its sibling and tags each
+    // row with the app it came from. Actions always stay on the owning app, so they never go through all/.
+    var url = '/api/security/' + (S.all ? 'all/' : '') + path;
+    return fetch(url, { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); });
+  };
   var action = function (a, target, extra) {
     return fetch('/api/security/action', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
       body: JSON.stringify(Object.assign({ action: a, target: target }, extra || {})) }).then(function (r) { return r.json(); });
@@ -17,6 +22,8 @@
   var ago = function (t) { if (!t) return ''; var s = (Date.now() - t) / 1000; if (s < 60) return Math.round(s) + 's ago'; if (s < 3600) return Math.round(s / 60) + 'm ago'; if (s < 86400) return Math.round(s / 3600) + 'h ago'; return Math.round(s / 86400) + 'd ago'; };
   var clock = function (t) { if (!t) return ''; var d = new Date(t); return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }); };
   var short = function (s, n) { s = String(s || ''); return s.length > (n || 10) ? s.slice(0, n || 10) + '…' : s; };
+  // Which board a row came from. Only rendered in All-apps mode, where it is what disambiguates rows.
+  var appTag = function (a) { return S.all && a ? '<span class="sc-app">' + esc(a) + '</span>' : ''; };
 
   function el() { var e = document.getElementById('secCenter'); if (!e) { e = document.createElement('div'); e.id = 'secCenter'; e.className = 'sec-center'; document.body.appendChild(e); } return e; }
 
@@ -37,6 +44,7 @@
   function chrome(body) {
     return '<div class="sc-wrap"><header class="sc-head"><h1>Security Center</h1>'
       + '<nav class="sc-nav">' + NAV.map(function (n) { return '<button data-sv="' + n[0] + '" class="' + (S.view === n[0] ? 'on' : '') + '">' + n[1] + '</button>'; }).join('') + '</nav>'
+      + '<button class="sc-all' + (S.all ? ' on' : '') + '" data-scall aria-pressed="' + (S.all ? 'true' : 'false') + '">All apps</button>'
       + '<button class="sc-x" data-scx aria-label="Close">✕</button></header><div class="sc-body">' + body + '</div></div>';
   }
   function loading() { el().innerHTML = chrome('<div class="sc-load">Loading…</div>'); }
@@ -67,13 +75,17 @@
       + stat('5xx errors', d.e5xx) + stat('Client errors', d.clientErrors)
       + stat('API latency p50 / p95', (d.apiLatencyP50 == null ? '—' : d.apiLatencyP50 + 'ms') + ' / ' + (d.apiLatencyP95 == null ? '—' : d.apiLatencyP95 + 'ms'))
       + stat('Elevated / high risk', d.riskElevated + ' / ' + d.riskHigh) + stat('Devices known', d.devicesKnown)
-      + '</div><p class="sc-fine">' + esc(d.app) + ' · ' + esc(d.env) + ' · commit ' + esc(d.commit) + '</p>';
+      + '</div>'
+      + (d.per ? '<h2 class="sc-h2">Per app</h2><table class="sc-tbl"><thead><tr><th>App</th><th>Devices</th><th>Active</th><th>Visits</th><th>Actions</th><th>Login fails</th><th>Errors</th></tr></thead><tbody>'
+        + Object.keys(d.per).map(function (k) { var a = d.per[k] || {}; return '<tr><td>' + esc(k) + '</td><td>' + (a.devicesKnown || 0) + '</td><td>' + (a.activeDevices || 0) + '</td><td>' + (a.visitsToday || 0) + '</td><td>' + (a.actionsToday || 0) + '</td><td>' + (a.loginFailures || 0) + '</td><td>' + (a.clientErrors || 0) + '</td></tr>'; }).join('')
+        + '</tbody></table>' : '')
+      + '<p class="sc-fine">' + esc(d.apps ? d.apps.join(' + ') : d.app) + ' · ' + esc(d.env) + ' · commit ' + esc(d.commit) + '</p>';
   }
   function riskPill(r) { return '<span class="sc-risk ' + r + '">' + r + '</span>'; }
   function devices(list) {
     return '<table class="sc-tbl"><thead><tr><th>Device</th><th>Users</th><th>Device</th><th>IPs</th><th>Sessions</th><th>Seen</th><th>Risk</th><th></th></tr></thead><tbody>'
       + list.map(function (d) {
-        return '<tr data-dev="' + esc(d.did) + '"><td class="mono">' + esc(short(d.did, 12)) + (d.blocked ? ' <span class="sc-tag bad">blocked</span>' : '') + '</td>'
+        return '<tr data-dev="' + esc(d.did) + '"><td class="mono">' + esc(short(d.did, 12)) + appTag(d.app) + (d.blocked ? ' <span class="sc-tag bad">blocked</span>' : '') + '</td>'
           + '<td>' + esc((d.users || []).join(', ') || '—') + '</td>'
           + '<td>' + esc(d.ua || d.os || '—') + '</td><td>' + d.ipCount + '</td><td>' + d.sessions + '</td>'
           + '<td>' + esc(ago(d.last)) + '</td><td>' + riskPill(d.risk) + '</td><td class="chev">›</td></tr>';
@@ -82,7 +94,7 @@
   function sessions(list) {
     return '<table class="sc-tbl"><thead><tr><th>Session</th><th>Device</th><th>User</th><th>IPs</th><th>Reqs</th><th>Started</th><th>State</th></tr></thead><tbody>'
       + list.map(function (s) {
-        return '<tr data-sess="' + esc(s.sid) + '"><td class="mono">' + esc(short(s.sid, 12)) + '</td><td class="mono">' + esc(short(s.deviceId, 10)) + '</td>'
+        return '<tr data-sess="' + esc(s.sid) + '"><td class="mono">' + esc(short(s.sid, 12)) + appTag(s.app) + '</td><td class="mono">' + esc(short(s.deviceId, 10)) + '</td>'
           + '<td>' + esc(s.userId || '—') + '</td><td>' + (s.ips ? s.ips.length : 0) + (s.multiIp ? ' <span class="sc-tag">multi</span>' : '') + '</td>'
           + '<td>' + s.reqs + '</td><td>' + esc(ago(s.created)) + '</td><td>' + (s.revoked ? '<span class="sc-tag bad">revoked</span>' : s.active ? '<span class="sc-tag ok">active</span>' : 'ended') + '</td></tr>';
       }).join('') + '</tbody></table>';
@@ -90,7 +102,7 @@
   function network(list) {
     return '<table class="sc-tbl"><thead><tr><th>IP (hashed)</th><th>Devices</th><th>Users</th><th>Events</th><th>First</th><th>Last</th></tr></thead><tbody>'
       + list.map(function (i) {
-        return '<tr data-ip="' + esc(i.ipHash) + '"><td class="mono">' + esc(i.ipHash) + ((i.users || []).length > 1 ? ' <span class="sc-tag">shared</span>' : '') + '</td>'
+        return '<tr data-ip="' + esc(i.ipHash) + '"><td class="mono">' + esc(i.ipHash) + appTag(i.app) + ((i.users || []).length > 1 ? ' <span class="sc-tag">shared</span>' : '') + '</td>'
           + '<td>' + (i.devices || []).length + '</td><td>' + esc((i.users || []).join(', ') || '—') + '</td>'
           + '<td>' + i.events + '</td><td>' + esc(ago(i.first)) + '</td><td>' + esc(ago(i.last)) + '</td></tr>';
       }).join('') + '</tbody></table>';
@@ -120,7 +132,7 @@
       var d = e.data || {};
       var label = e.kind === 'security' ? (d.signal || 'security') : e.kind === 'app_action' ? (d.action || 'action') : e.kind === 'request' ? (e.method + ' ' + e.route + ' ' + e.status) : e.kind === 'client_error' ? (d.cls + ': ' + (d.msg || '')) : (e.route || e.kind);
       var extra = [e.user, e.uid ? short(e.uid, 8) : '', e.ipHash ? short(e.ipHash, 8) : ''].filter(Boolean).join(' · ');
-      return '<li class="sc-ev sev-' + esc(e.sev) + '"><span class="sc-t">' + esc(clock(e.t)) + '</span>'
+      return '<li class="sc-ev sev-' + esc(e.sev) + '"><span class="sc-t">' + esc(clock(e.t)) + appTag(e.app) + '</span>'
         + '<span class="sc-k">' + esc(e.kind) + '</span><span class="sc-l">' + esc(label) + '</span>'
         + '<span class="sc-m">' + esc(extra) + '</span></li>';
     }).join('') + '</ol>';
@@ -179,6 +191,7 @@
     if (!document.getElementById('secCenter')) return;
     var sv = t.closest('[data-sv]'); if (sv) { S.view = sv.getAttribute('data-sv'); render(); return; }
     if (t.closest('[data-scx]')) { close(); return; }
+    if (t.closest('[data-scall]')) { S.all = !S.all; render(); return; }
     if (t.closest('[data-scback]')) { render(); return; }
     var dv = t.closest('[data-dev]'); if (dv) { detail('device', dv.getAttribute('data-dev')); return; }
     var ss = t.closest('[data-sess]'); if (ss) { detail('session', ss.getAttribute('data-sess')); return; }

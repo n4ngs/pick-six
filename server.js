@@ -614,6 +614,7 @@ function readBody(req) {
 // ---------------------------------------------------------------- optional access code
 // Off by default (a Mac on home Wi-Fi). With ACCESS_CODE set, every page and API needs the code once per device.
 const crypto = require('node:crypto');
+const https = require('node:https');
 const hashCode = (c) => crypto.createHash('sha256').update(`hl:${c}`).digest('hex');
 const codeHash = ACCESS_CODE ? hashCode(ACCESS_CODE) : '';
 // What an owner's installed icon carries in its start_url so a Home Screen launch is still the owner. Derived
@@ -813,6 +814,79 @@ function telRoute(p) {
     .replace(/\/\d{4,}/g, '/:id')
     .slice(0, 80);
 }
+/* ---------------------------------------------------------------- cross-app Security Center
+
+   One owner link that shows both boards. Each app can read a sibling's telemetry server-to-server,
+   authenticated by a shared secret (TELEMETRY_PEER_SECRET), never a user cookie. The peer endpoint is
+   READ ONLY — admin actions stay on the app that owns the device, so a compromised secret can observe
+   but not revoke, block or disable. Every merged row is tagged with the app it came from. */
+const PEER_SECRET = process.env.TELEMETRY_PEER_SECRET || '';
+const PEER_URL = (process.env.TELEMETRY_PEER_URL || '').replace(/\/$/, '');
+const PEER_NAME = process.env.TELEMETRY_PEER_NAME || 'peer';
+function peerOk(req) {
+  const g = String(req.headers['x-peer-secret'] || '');
+  if (!PEER_SECRET || g.length !== PEER_SECRET.length) return false;
+  try { return crypto.timingSafeEqual(Buffer.from(g), Buffer.from(PEER_SECRET)); } catch { return false; }
+}
+// One place that answers a Security Center GET — reused by the owner path, the peer path and the
+// aggregate. Returns { code, body } or null for an unknown sub.
+function securityRead(sub, q) {
+  if (sub === 'overview') return { code: 200, body: Tel.overview() };
+  if (sub === 'query') return { code: 200, body: { events: Tel.query(q) } };
+  if (sub === 'relationships') return { code: 200, body: Tel.relationships() };
+  if (sub === 'devices') return { code: 200, body: { devices: Tel.listDevices() } };
+  if (sub === 'sessions') return { code: 200, body: { sessions: Tel.listSessions() } };
+  if (sub === 'ips') return { code: 200, body: { ips: Tel.listIps() } };
+  if (sub === 'security') return { code: 200, body: { events: Tel.listSecurity(q.sev) } };
+  if (sub === 'audit') return { code: 200, body: { events: Tel.listAudit() } };
+  const m = /^(device|session|ip|user)\/(.+)$/.exec(sub);
+  if (m) {
+    const d = m[1] === 'device' ? Tel.deviceDetail(m[2]) : m[1] === 'session' ? Tel.sessionDetail(m[2])
+      : m[1] === 'ip' ? Tel.ipDetail(m[2]) : Tel.userDetail(decodeURIComponent(m[2]));
+    return d ? { code: 200, body: d } : { code: 404, body: { error: 'Not found' } };
+  }
+  return null;
+}
+function fetchPeer(sub, q) {
+  return new Promise((resolve) => {
+    if (!PEER_URL || !PEER_SECRET) return resolve(null);
+    const qs = Object.keys(q || {}).filter((k) => q[k]).map((k) => k + '=' + encodeURIComponent(q[k])).join('&');
+    const u = `${PEER_URL}/api/security/peer/${sub}${qs ? '?' + qs : ''}`;
+    const mod = u.startsWith('http://') ? http : https;   // prod peers are https; a local http peer is for testing
+    const r = mod.get(u, { headers: { 'x-peer-secret': PEER_SECRET }, timeout: 8000 }, (resp) => {
+      let b = ''; resp.on('data', (d) => { b += d; if (b.length > 4e6) resp.destroy(); }); resp.on('end', () => { try { resolve(JSON.parse(b)); } catch { resolve(null); } });
+    });
+    r.on('error', () => resolve(null)); r.on('timeout', () => { r.destroy(); resolve(null); });
+  });
+}
+async function aggregate(sub, q) {
+  const localRes = securityRead(sub, q);
+  const local = localRes ? localRes.body : null;
+  const peer = await fetchPeer(sub, q);
+  const tag = (arr, name) => (arr || []).map((x) => ({ ...x, app: x.app || name }));
+  if (sub === 'overview') {
+    const L = local || {}, P = peer || {}, add = (k) => (L[k] || 0) + (P[k] || 0);
+    return { apps: [L.app, P.app].filter(Boolean), env: L.env, per: { [L.app || Tel.APP]: L, [P.app || PEER_NAME]: P },
+      activeUsers: add('activeUsers'), activeDevices: add('activeDevices'), activeSessions: add('activeSessions'),
+      visitsToday: add('visitsToday'), actionsToday: add('actionsToday'), uniqueIps: add('uniqueIps'),
+      newDevices: add('newDevices'), newIps: add('newIps'), loginFailures: add('loginFailures'),
+      e401: add('e401'), e403: add('e403'), e429: add('e429'), e5xx: add('e5xx'), clientErrors: add('clientErrors'),
+      riskElevated: add('riskElevated'), riskHigh: add('riskHigh'), devicesKnown: add('devicesKnown'),
+      apiLatencyP50: L.apiLatencyP50, apiLatencyP95: L.apiLatencyP95, commit: L.commit, app: 'all' };
+  }
+  if (sub === 'query' || sub === 'security' || sub === 'audit') {
+    const ev = [...((local && local.events) || []), ...((peer && peer.events) || [])].sort((a, b) => b.t - a.t).slice(0, 300);
+    return { events: ev };
+  }
+  if (sub === 'devices') return { devices: [...tag(local && local.devices, Tel.APP), ...tag(peer && peer.devices, PEER_NAME)] };
+  if (sub === 'sessions') return { sessions: [...tag(local && local.sessions, Tel.APP), ...tag(peer && peer.sessions, PEER_NAME)] };
+  if (sub === 'ips') return { ips: [...tag(local && local.ips, Tel.APP), ...tag(peer && peer.ips, PEER_NAME)] };
+  if (sub === 'relationships') return { local: local, peer: peer, apps: [Tel.APP, PEER_NAME] };
+  if (local && localRes.code === 200) return { ...local, app: Tel.APP };   // detail lives in one app
+  if (peer) return { ...peer, app: PEER_NAME };
+  return local || { error: 'Not found' };
+}
+
 const server = http.createServer(async (req, res) => {
   res.__ae = req.headers['accept-encoding'] || '';   // read by sendBody(); keeps ~30 call sites unchanged
   // Request telemetry. One record per served request, written when the response finishes so status and
@@ -848,6 +922,14 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const p = url.pathname;
   const M = req.method;
+  // Cross-app peer read. Authenticated by the shared secret, never a cookie, so it must run before
+  // every cookie-based gate (access code, accessDenied, reauth). Read-only — admin actions stay on the
+  // app that owns the device, so a leaked secret can observe but never revoke, block or disable.
+  if (p.startsWith('/api/security/peer/') && M === 'GET') {
+    if (!peerOk(req)) return sendJSON(res, 401, { error: 'peer' });
+    const r = securityRead(p.slice('/api/security/peer/'.length), Object.fromEntries(url.searchParams));
+    return r ? sendJSON(res, r.code, r.body) : sendJSON(res, 404, { error: 'Unknown' });
+  }
   if (ACCESS_CODE && p === '/login' && M === 'POST') {
     const ip = clientIp(req);
     if (lockedOut(ip)) { res.writeHead(429, { 'content-type': 'text/plain; charset=utf-8', 'retry-after': '900' }); return res.end('Too many tries. Wait 15 minutes.'); }
@@ -1228,24 +1310,15 @@ const server = http.createServer(async (req, res) => {
     }
     // ===================================================== Security Center (owner only)
     if (p.startsWith('/api/security/')) {
-      if (role !== 'owner') return ownerOnly();          // every read AND write here is owner-gated
       const sub = p.slice('/api/security/'.length);
       const q = Object.fromEntries(url.searchParams);
+      // (Peer reads are handled earlier, before the cookie gates — see /api/security/peer/ above.)
+      if (role !== 'owner') return ownerOnly();          // every other read AND every write is owner-gated
+      // Cross-app aggregate: this board plus the sibling, merged and tagged by app. Owner only.
+      if (sub.startsWith('all/') && M === 'GET') return sendJSON(res, 200, await aggregate(sub.slice('all/'.length), q));
       if (M === 'GET') {
-        if (sub === 'overview') return sendJSON(res, 200, Tel.overview());
-        if (sub === 'query') return sendJSON(res, 200, { events: Tel.query(q) });
-        if (sub === 'relationships') return sendJSON(res, 200, Tel.relationships());
-        if (sub === 'devices') return sendJSON(res, 200, { devices: Tel.listDevices() });
-        if (sub === 'sessions') return sendJSON(res, 200, { sessions: Tel.listSessions() });
-        if (sub === 'ips') return sendJSON(res, 200, { ips: Tel.listIps() });
-        if (sub === 'security') return sendJSON(res, 200, { events: Tel.listSecurity(q.sev) });
-        if (sub === 'audit') return sendJSON(res, 200, { events: Tel.listAudit() });
-        const m = /^(device|session|ip|user)\/(.+)$/.exec(sub);
-        if (m) {
-          const detail = m[1] === 'device' ? Tel.deviceDetail(m[2]) : m[1] === 'session' ? Tel.sessionDetail(m[2])
-            : m[1] === 'ip' ? Tel.ipDetail(m[2]) : Tel.userDetail(decodeURIComponent(m[2]));
-          return detail ? sendJSON(res, 200, detail) : sendJSON(res, 404, { error: 'Not found' });
-        }
+        const r = securityRead(sub, q);
+        if (r) return sendJSON(res, r.code, r.body);
         return sendJSON(res, 404, { error: 'Unknown query' });
       }
       if (sub === 'action' && M === 'POST') {

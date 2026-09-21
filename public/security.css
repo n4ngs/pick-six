@@ -68,3 +68,8 @@
   .sc-ev .sc-m{grid-column:1/-1}
   .sc-tbl th:nth-child(3),.sc-tbl td:nth-child(3){display:none}
 }
+
+/* All-apps toggle and the per-row badge that says which board a row came from */
+.sc-all{height:32px;padding:0 12px;border-radius:999px;background:var(--fill);color:var(--ink-2);font-size:12px;font-weight:600;border:1px solid var(--edge);flex:none}
+.sc-all.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.sc-app{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--fill);color:var(--ink-3);font-size:10px;font-weight:600;letter-spacing:.02em;vertical-align:middle}
