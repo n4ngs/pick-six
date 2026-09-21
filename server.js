@@ -135,6 +135,7 @@ function openOf(G, W, books) {
 
 function pub(G, W) {
   const an = W.an.get(G.id) || {};
+  const P = W.pin.get(G.id) || {};
   const books = mergedBooks(G, W);
   const H = W.lines.full(G.id);
   const wx = G.venue?.indoor ? { dome: true } : { ...(G.wx || {}), ...(W.wx.get(G.id) || {}) };
@@ -155,7 +156,17 @@ function pub(G, W) {
     tt: an.tt || null,
     h1: mergedHalf(G, W),
     opens: W.vs.get(G.id)?.open || null,
-    pinLimit: W.pin.get(G.id)?.limit ?? null,
+    pinLimit: P.limit ?? null,
+    // The in-play sharp number, and the only thing that makes it usable: how old the price actually is.
+    // `age` is derived from Pinnacle's HTTP `age` header, so it measures the price, not our poll. Anything
+    // consuming this must gate on it — the feed is CDN-cached for up to ~15 minutes, and a stale sharp
+    // number is how a board shows an edge that stopped existing minutes ago.
+    // UNITS: `age` is MILLISECONDS. The HTTP header is seconds; it is converted here, once, because every
+    // consumer compares it against a ms freshness budget. Publishing the raw header would make a
+    // five-minute-old price read as 300ms — fresh — which is the worst bug this feature could have.
+    pinLive: P.liveLine
+      ? { line: P.liveLine, limit: P.liveLimit ?? null, age: Number.isFinite(P.liveAge) ? P.liveAge * 1000 : null }
+      : null,
     prob: G.state === 'in' ? an.prob || null : null,
     tickets: an.bets || null,
     fpi: W.fpi.get(G.id)?.home ?? null,
@@ -248,12 +259,43 @@ async function pollEspn(W) {
   if (Bets.refresh(gameById, closeById)) emitBets();
 }
 
+// How long after kickoff the board still counts as the closing board. Inside it, the books this app can
+// see are still the numbers the game closed at. Outside it, they are in-game numbers.
+const CLOSE_WINDOW = 5 * 60e3;
+
+// The last pregame price each book showed. `recordBooks` only runs while a game is 'pre', so this
+// history is pregame by construction — which is the whole point when a close has to be taken late.
+function closeFromHistory(W, g) {
+  const H = W.lines.full(g.id);
+  const out = {};
+  for (const [k, B] of Object.entries(H?.b || {})) {
+    if (k === 'open') continue;
+    const s = B.s?.at(-1), t = B.t?.at(-1), ml = B.ml?.at(-1);
+    if (!s && !t && !ml) continue;
+    out[k] = {
+      s: s ? s[1] : null, so: [s ? s[2] : null, null],
+      t: t ? t[1] : null, to: [t ? t[2] : null, null],
+      ml: ml ? [ml[1], ml[2]] : [null, null],
+    };
+  }
+  return out;
+}
+
 function onKickoff(W, g) {
-  const books = mergedBooks(g, W);
+  // Normally this runs the moment a game flips, and the live board is still the closing board. But the
+  // sweep at the top of the ESPN poll also catches a game that kicked off while this server was down,
+  // and by then mergedBooks() is reporting in-game numbers. Recording one of those as "the close" is
+  // worse than recording nothing: it looks like data and it is not. Past the window, use the stored
+  // pregame history, and if there is none, take no close at all.
+  const late = Date.now() - Date.parse(g.start) > CLOSE_WINDOW;
+  const books = late ? closeFromHistory(W, g) : mergedBooks(g, W);
   const c = books.cons || books.dk;
   if (!c || (c.s == null && c.t == null)) return;
-  if (W.lines.setClose(g.id, { s: c.s, so: c.so, t: c.t, to: c.to, ml: c.ml, books: Object.fromEntries(Object.entries(books).filter(([k]) => k !== 'open').map(([k, L]) => [k, { s: L.s, t: L.t, ml: L.ml }])) })) {
-    log('close', g.away.abbr, '@', g.home.abbr, c.s, c.t);
+  // A close rebuilt from history is the last price this app SAW, not necessarily the last price the book
+  // hung. Mark it, so anything measuring closing line value later can tell the two apart instead of
+  // treating an approximation as a reading.
+  if (W.lines.setClose(g.id, { s: c.s, so: c.so, t: c.t, to: c.to, ml: c.ml, ...(late ? { est: true } : {}), books: Object.fromEntries(Object.entries(books).filter(([k]) => k !== 'open').map(([k, L]) => [k, { s: L.s, t: L.t, ml: L.ml }])) })) {
+    log('close', g.away.abbr, '@', g.home.abbr, c.s, c.t, late ? '(from pregame history)' : '');
   }
 }
 
@@ -335,8 +377,12 @@ async function pollPin() {
   for (const [gid, patch] of PIN.matchPinnacle(pg, all)) {
     const W = weekOf.get(gid);
     const prev = W.pin.get(gid);
-    // Pinnacle takes games off its board at kickoff; keep the last pregame number.
-    W.pin.set(gid, patch.line ? { ...patch, at: Date.now() } : { ...prev, live: true }); // `at`: last time Pinnacle listed it
+    // Pinnacle takes the pre-game parent off its board at kickoff and lists the game again as a live
+    // child. Keep the last pregame number as `line` — that is what the game closed at — and let the
+    // in-play price ride alongside it, never over it.
+    W.pin.set(gid, patch.line
+      ? { ...patch, at: Date.now() }
+      : { ...prev, ...patch, line: prev?.line ?? null, h1: prev?.h1 ?? null, limit: prev?.limit ?? null, live: true, at: Date.now() }); // `at`: last time Pinnacle listed it
     const G = W.games.get(gid);
     if (G.state === 'pre' && patch.line) recordBooks(W, G);
   }
@@ -553,8 +599,7 @@ const TYPES = {
   '.webmanifest': 'application/manifest+json', '.txt': 'text/plain; charset=utf-8',
 };
 function sendJSON(res, code, body) {
-  res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-  res.end(JSON.stringify(body));
+  sendBody(res, code, JSON.stringify(body), { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
 }
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -698,6 +743,46 @@ try{
 }catch(x){}
 </script>`.replace('{mode}', JSON.stringify(mode)));
 }
+/* ------------------------------------------------------------------ compression
+
+   Nothing here was compressed. The client is 472 KB of JS and CSS that gzips to 140 KB, and the week
+   payload is ~59 KB of JSON that goes out on every load and every reconnect. On a phone on stadium wifi
+   that difference is the difference between the board being there and the board still loading.
+
+   Built into Node, so the zero-dependency rule holds. Compressed static files are cached in memory and
+   keyed by mtime, so a file is compressed once per edit, not once per request. Brotli when the browser
+   takes it (smaller), gzip otherwise.
+
+   Deliberately NOT applied to the SSE stream: /api/stream is a long-lived push channel and putting a
+   compressor in front of it risks buffering a live price update until the next flush. Live beats small. */
+const zlib = require('zlib');
+const COMPRESSIBLE = /^(?:text\/|application\/(?:json|javascript|manifest\+json)|image\/svg)/;
+const fileMtime = (f) => { try { return fs.statSync(f).mtimeMs; } catch { return 0; } };
+const COMPRESS_MIN = 1024;
+const zCache = new Map();  // `${file}|${mtime}|${enc}` -> Buffer
+
+function encFor(res) {
+  const ae = String(res.__ae || '');
+  if (/\bbr\b/.test(ae)) return 'br';
+  if (/\bgzip\b/.test(ae)) return 'gzip';
+  return null;
+}
+const zip = (buf, enc) => (enc === 'br'
+  ? zlib.brotliCompressSync(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } })
+  : zlib.gzipSync(buf, { level: 6 }));
+
+// One place that decides whether a response is worth compressing, and does it.
+function sendBody(res, code, body, headers) {
+  const buf = Buffer.isBuffer(body) ? body : Buffer.from(body);
+  const type = String(headers['content-type'] || '');
+  const enc = buf.length >= COMPRESS_MIN && COMPRESSIBLE.test(type) ? encFor(res) : null;
+  if (!enc) { res.writeHead(code, headers); return res.end(buf); }
+  let out;
+  try { out = zip(buf, enc); } catch { res.writeHead(code, headers); return res.end(buf); }
+  res.writeHead(code, { ...headers, 'content-encoding': enc, vary: 'accept-encoding', 'content-length': out.length });
+  res.end(out);
+}
+
 // public/index.html, read once and re-read when it changes on disk.
 let idxCache = { mtime: 0, html: '' };
 function indexHTML() {
@@ -708,6 +793,7 @@ function indexHTML() {
 }
 
 const server = http.createServer(async (req, res) => {
+  res.__ae = req.headers['accept-encoding'] || '';   // read by sendBody(); keeps ~30 call sites unchanged
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const p = url.pathname;
   const M = req.method;
@@ -826,8 +912,7 @@ const server = http.createServer(async (req, res) => {
     // Take the credential back out of the address bar as soon as it has done its job.
     stash += '<script>try{if(location.search)history.replaceState(null,"",location.pathname)}catch(e){}</script>';
     const html = indexHTML().replace('<link rel="manifest" href="manifest.webmanifest">', link + stash);
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store', vary: 'cookie' });
-    return res.end(html);
+    return sendBody(res, 200, html, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store', vary: 'cookie' });
   }
   Group.note(uid, Group.byToken(cookieOf(req).ps_key || '')?.id || null);
   if (M !== 'GET' && M !== 'HEAD' && p.startsWith('/api/') && !writeBudget(uid)) return sendJSON(res, 429, { error: 'That\u2019s a lot of changes at once. Give it five minutes.' });
@@ -980,8 +1065,25 @@ const server = http.createServer(async (req, res) => {
     if (!file.startsWith(PUBLIC)) return sendJSON(res, 403, { error: 'Forbidden' });
     fs.readFile(file, (err, buf) => {
       if (err) return sendJSON(res, 404, { error: 'Not found' });
-      res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-cache' });
-      res.end(buf);
+      const type = TYPES[path.extname(file)] || 'application/octet-stream';
+      /* `no-cache` means "revalidate every time", not "never store" — but with no validator to revalidate
+         AGAINST, every load re-downloaded the whole client. An ETag keeps the silent-update behaviour
+         exactly as it was (the browser still asks on every load, so a push is picked up immediately) and
+         turns the answer into an empty 304 whenever the file has not changed. */
+      const tag = `W/"${buf.length.toString(16)}-${Math.round(fileMtime(file)).toString(16)}"`;
+      const head = { 'content-type': type, 'cache-control': 'no-cache', etag: tag };
+      if (req.headers['if-none-match'] === tag) { res.writeHead(304, { etag: tag, 'cache-control': 'no-cache' }); return res.end(); }
+      const enc = buf.length >= COMPRESS_MIN && COMPRESSIBLE.test(type) ? encFor(res) : null;
+      if (!enc) { res.writeHead(200, head); return res.end(buf); }
+      const key = `${file}|${fileMtime(file)}|${enc}`;
+      let out = zCache.get(key);
+      if (!out) {
+        try { out = zip(buf, enc); } catch { res.writeHead(200, head); return res.end(buf); }
+        if (zCache.size > 200) zCache.clear();   // bounded: this is a small static tree
+        zCache.set(key, out);
+      }
+      res.writeHead(200, { ...head, 'content-encoding': enc, vary: 'accept-encoding', 'content-length': out.length });
+      res.end(out);
     });
   } catch (e) {
     log('http', p, e.message);
