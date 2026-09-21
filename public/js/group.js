@@ -15,10 +15,74 @@ const grpShareUrl = (t) => `${grpLinks?.base || location.origin}/j/${t}`;
 // ------------------------------------------------------------ the Group tab (the owner's own screen)
 /* One screen for the whole board: what the group has running right now, each person's log, and the links
    that let them in. Everything here is read-only — the owner watches, they don't touch anyone's tickets. */
+/* ------------------------------------------------------------------ board health
+
+   An admin's first question is not "who is on the board", it is "is the board actually working". The
+   server has always known — /api/health carries every feed's last success, its consecutive failures and
+   whether it is currently backing off — and none of it had anywhere to go. A feed can quietly stop and
+   the only symptom is numbers that look slightly old, which is the hardest kind of failure to notice.
+
+   Colour follows the house rule: green means a ticket of yours is winning and nothing else, so a healthy
+   feed is just ink. Trouble takes the accent. */
+const GRP_FEEDS = [
+  ['site.api.espn.com', 'ESPN', 'scores, schedule, injuries'],
+  ['api.actionnetwork.com', 'Action Network', 'live odds and splits'],
+  ['data.vsin.com', 'VSiN', 'the Vegas windows'],
+  ['guest.api.arcadia.pinnacle.com', 'Pinnacle', 'the sharp line'],
+  ['api.open-meteo.com', 'Weather', 'wind and rain'],
+];
+const GRP_QUIET = 10 * 60e3;   // a feed with nothing new for this long is worth a second look
+let grpHealth = null;
+
+function grpLoadHealth() {
+  if (typeof api !== 'function') return Promise.resolve();
+  return api('/api/health')
+    .then((h) => { grpHealth = h; })
+    .catch(() => { grpHealth = { unreachable: true }; });
+}
+
+function grpFeedRow(host, name, what) {
+  const src = grpHealth?.sources?.[host];
+  if (!src) return `<div class="grp-feed"><b>${esc(name)}</b><span class="grp-feed-w">${esc(what)}</span><span class="grp-feed-s quiet">not called yet</span></div>`;
+  const ago = src.lastOk ? serverNow() - src.lastOk : null;
+  const bad = src.pausedFor > 0 || src.fails > 0;
+  const state = src.pausedFor > 0
+    ? `backing off ${vasAgoish(src.pausedFor)}`
+    : src.fails > 0
+      ? `${plural(src.fails, 'failed try', 'failed tries')}`
+      : ago == null ? 'no answer yet'
+        : ago > GRP_QUIET ? `quiet ${vasAgoish(ago)}`
+          : `ok · ${vasAgoish(ago)} ago`;
+  const cls = bad ? 'bad' : ago != null && ago > GRP_QUIET ? 'quiet' : '';
+  return `<div class="grp-feed"><b>${esc(name)}</b><span class="grp-feed-w">${esc(what)}</span><span class="grp-feed-s ${cls}">${esc(state)}</span></div>`;
+}
+// A short duration, without pulling in the VAS file just for this.
+function vasAgoish(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 90) return `${s}s`;
+  const m = Math.round(s / 60);
+  return m < 90 ? `${m} min` : `${Math.round(m / 60)}h`;
+}
+
+function grpHealthHTML() {
+  if (!grpHealth) return '<div class="card grp-health"><p class="grp-lede">Checking the feeds…</p></div>';
+  if (grpHealth.unreachable) return '<div class="card grp-health"><p class="grp-lede bad">Could not reach the server for a health check.</p></div>';
+  const w = (grpHealth.weeks || [])[0];
+  const here = grpHealth.clients ?? 0;
+  const bad = GRP_FEEDS.filter(([h]) => { const x = grpHealth.sources?.[h]; return x && (x.fails > 0 || x.pausedFor > 0); }).length;
+  return `<div class="card grp-health">
+    <div class="grp-health-h">
+      <span>${esc(bad ? `${plural(bad, 'feed')} having trouble` : 'Every feed answering')}</span>
+      <span class="grp-health-n">${esc(plural(here, 'phone'))} connected${w ? ` · ${esc(`${w.matched}/${w.games} games matched`)}` : ''}</span>
+    </div>
+    ${GRP_FEEDS.map(([h, n, wt]) => grpFeedRow(h, n, wt)).join('')}
+  </div>`;
+}
+
 function renderAdmin() {
   const body = $('#adminBody');
   if (!body) return;
-  if (!grpPeople && !grpLoading) { grpLoading = Promise.all([grpLoadGroup(), grpLoadLinks()]).finally(() => { grpLoading = null; }); }
+  if (!grpPeople && !grpLoading) { grpLoading = Promise.all([grpLoadGroup(), grpLoadLinks(), grpLoadHealth()]).finally(() => { grpLoading = null; renderAdmin(); }); }
   const P = grpPeople || [];
   const open = P.reduce((n, x) => n + x.open.length, 0);
   const atRisk = P.reduce((n, x) => n + x.open.reduce((t, b) => t + (b.stake || 0), 0), 0);
@@ -31,6 +95,8 @@ function renderAdmin() {
       ${grpStat('Open tickets', String(open), open ? `${fmtMoney(atRisk)} at risk` : 'nothing running')}
       ${grpStat('Group net', fmtMoney(net, true), 'settled bets only', net > 0 ? 'w' : net < 0 ? 'l' : '')}
     </div>
+    <div class="sec-h" style="margin-top:28px"><h2>Board health</h2><span class="m">What the app is reading right now</span></div>
+    ${grpHealthHTML()}
     <div class="sec-h" style="margin-top:28px"><h2>People</h2><span class="m">${P.length ? 'Tap a name for their log' : ''}</span></div>
     <div class="card grp-list" id="grpPeople"></div>
     <div class="sec-h" style="margin-top:28px"><h2>Share links</h2><span class="m">One per person</span></div>
@@ -132,7 +198,7 @@ async function grpLoadGroup() {
   if (S.tab === 'admin' && !S.sheet) renderAdmin(); else grpPaint();
 }
 // The group is re-read while the tab is open, so a friend's ticket shows up without a reload.
-setInterval(() => { if (S.tab === 'admin' && !S.sheet && document.visibilityState === 'visible') grpLoadGroup(); }, 20000);
+setInterval(() => { if (S.tab === 'admin' && !S.sheet && document.visibilityState === 'visible') { grpLoadGroup(); grpLoadHealth().then(() => { if (S.tab === 'admin' && !S.sheet) renderAdmin(); }); } }, 20000);
 function grpErr(msg) { const e = $('#grpErr'); if (e) e.textContent = msg || ''; }
 
 // ------------------------------------------------------------ the first screen a guest sees

@@ -55,3 +55,26 @@
   .grp-p-o{grid-column:2}
   .grp-p-r{grid-column:2;grid-row:2}
 }
+
+/* ─────────────────────────────────────────────────────── board health
+   An admin's first question is whether the board is actually working. Healthy is plain ink — green in
+   this app means a ticket of yours is winning and nothing else — and only trouble takes the accent. */
+.grp-health{padding:0;overflow:hidden}
+.grp-health-h{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 12px;
+  padding:14px 16px;border-bottom:1px solid var(--line);font-size:14px;font-weight:600;color:var(--ink)}
+.grp-health-n{font-size:12px;font-weight:500;color:var(--ink-3)}
+.grp-feed{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr) auto;align-items:baseline;gap:4px 12px;
+  padding:11px 16px;border-top:1px solid var(--line);font-size:13px}
+.grp-feed:first-of-type{border-top:0}
+.grp-feed b{color:var(--ink);font-weight:600}
+.grp-feed-w{min-width:0;color:var(--ink-3);font-size:12px}
+.grp-feed-s{white-space:nowrap;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.grp-feed-s.quiet{color:var(--ink-3)}
+.grp-feed-s.bad{color:var(--accent);font-weight:600}
+.grp-lede.bad{color:var(--accent)}
+
+@media (max-width:480px){
+  /* The description is the first thing to go when there is no room for three columns. */
+  .grp-feed{grid-template-columns:minmax(0,1fr) auto}
+  .grp-feed-w{display:none}
+}
