@@ -914,7 +914,9 @@ const server = http.createServer(async (req, res) => {
     const html = indexHTML().replace('<link rel="manifest" href="manifest.webmanifest">', link + stash);
     return sendBody(res, 200, html, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store', vary: 'cookie' });
   }
-  Group.note(uid, Group.byToken(cookieOf(req).ps_key || '')?.id || null, { ua: req.headers['user-agent'], addr: clientIp(req), self: role === 'owner' });
+  // `self` records the owner's own phone so it is visible in the Admin Center. Only on a board with an
+  // access code: without one everybody is the owner, and every passer-by would become a row.
+  Group.note(uid, Group.byToken(cookieOf(req).ps_key || '')?.id || null, { ua: req.headers['user-agent'], addr: clientIp(req), self: role === 'owner' && !!ACCESS_CODE });
   if (M !== 'GET' && M !== 'HEAD' && p.startsWith('/api/') && !writeBudget(uid)) return sendJSON(res, 429, { error: 'That\u2019s a lot of changes at once. Give it five minutes.' });
   const ownerOnly = () => sendJSON(res, 403, { error: 'Only the person who runs this board can do that.' });
   try {
@@ -1008,6 +1010,28 @@ const server = http.createServer(async (req, res) => {
        it must not tell anyone their log is private, because it is not. */
     if (p === '/api/group/activity' && M === 'GET') {
       if (role !== 'owner') return ownerOnly();
+      /* `since` is the background poll the owner's app runs to notice somebody joining or betting. It
+         answers with the new events only and skips the ledger entirely, so watching the board costs a
+         few hundred bytes a minute instead of the whole log. */
+      const since = Number(url.searchParams.get('since')) || 0;
+      if (since) {
+        const out = [];
+        const nm = new Map(Group.people().map((P) => [P.uid, P.name || '']));
+        for (const P of Group.people()) {
+          if (P.uid === uid) continue;                       // the owner's own comings and goings are not news
+          if (P.first && P.first > since) out.push({ t: P.first, kind: 'joined', uid: P.uid, name: nm.get(P.uid) || '', dev: P.dev || '' });
+        }
+        for (const [owner, list] of Bets.byOwner()) {
+          if (owner === uid || !nm.has(owner)) continue;
+          for (const b of list) {
+            const t = Date.parse(b.placed) || b.created || 0;
+            if (t > since) out.push({ t, kind: 'placed', uid: owner, name: nm.get(owner) || '', stake: b.stake, book: b.book || '', legs: (b.legs || []).length });
+            if (b.settled && b.settled > since) out.push({ t: b.settled, kind: b.status, uid: owner, name: nm.get(owner) || '', stake: b.stake, net: b.net });
+          }
+        }
+        out.sort((a, b) => a.t - b.t);
+        return sendJSON(res, 200, { now: Date.now(), since, events: out.slice(-25) });
+      }
       const by = Bets.byOwner();
       const people = Group.people();   // every device, the owner's own included and marked below
       const nameOf = new Map(people.map((P) => [P.uid, P.name || 'Someone']));

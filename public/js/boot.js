@@ -43,7 +43,7 @@ function applyAlerts() {
   const b = $('#alertBtn');
   b.innerHTML = S.alerts === 'off' ? ICON.bell : ICON.bellOn;
   b.classList.toggle('on', S.alerts !== 'off');
-  b.setAttribute('aria-label', `Alerts: ${S.alerts === 'off' ? 'off' : S.alerts === 'mine' ? 'my bets and teams' : 'every line move'}`);
+  b.setAttribute('aria-label', `Alerts: ${S.alerts === 'off' ? 'off' : S.alerts === 'mine' ? 'my bets and teams' : 'everything, board included'}`);
   b.title = b.getAttribute('aria-label');
 }
 async function setAlerts(mode) {

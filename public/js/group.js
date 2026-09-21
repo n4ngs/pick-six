@@ -79,6 +79,60 @@ function grpHealthHTML() {
   </div>`;
 }
 
+/* ------------------------------------------------------- telling the owner what people are doing
+
+   The Admin Center answers "what happened" when you go and look. This is the other half: the board
+   telling you as it happens, wherever you are in the app. Somebody joining on a link you just sent, or
+   putting money on something, is the kind of thing you want to know without going to check.
+
+   It polls the slim end of the activity endpoint, which returns only what is new since the last ask —
+   a few hundred bytes a minute — and it only runs for the owner, only while the tab is visible, and
+   only while alerts are not switched off. The watermark lives in localStorage so a reload does not
+   replay a whole evening of events at you. */
+const GRP_WATCH_KEY = 'grpseen';
+const GRP_WATCH_MS = 45000;
+let grpWatchBusy = false;
+
+function grpWatchTick() {
+  if (grpWatchBusy || typeof api !== 'function') return;
+  if (!isOwner() || !S.me?.shared) return;              // nothing to watch on a board with nobody on it
+  if (S.alerts === 'off' || document.visibilityState !== 'visible') return;
+  const since = store.get(GRP_WATCH_KEY, 0) || Date.now() - 10 * 60e3;
+  grpWatchBusy = true;
+  api(`/api/group/activity?since=${since}`)
+    .then((d) => {
+      store.set(GRP_WATCH_KEY, d.now || Date.now());
+      for (const e of (d.events || []).slice(-4)) grpAnnounce(e);
+    })
+    .catch(() => { /* a quiet failure here must never interrupt the board */ })
+    .finally(() => { grpWatchBusy = false; });
+}
+
+function grpAnnounce(e) {
+  const who = e.name || 'Someone';
+  let kicker = '', title = '', line = '';
+  if (e.kind === 'joined') {
+    kicker = 'Joined the board';
+    title = who === 'Someone' ? 'A new phone is in' : `${who} is in`;
+    line = [e.dev, 'they can log tickets now'].filter(Boolean).join(' · ');
+  } else if (e.kind === 'placed') {
+    kicker = 'New ticket';
+    title = `${who} put ${fmtMoney(e.stake)} on it`;
+    line = [e.legs > 1 ? `${plural(e.legs, 'leg')} parlay` : 'single', e.book ? bookName(e.book) : ''].filter(Boolean).join(' · ');
+  } else if (e.kind === 'won' || e.kind === 'lost' || e.kind === 'push') {
+    kicker = e.kind === 'won' ? 'Winner on the board' : e.kind === 'lost' ? 'Settled' : 'Push';
+    title = `${who} ${e.kind === 'won' ? 'won' : e.kind === 'lost' ? 'lost' : 'pushed'}`;
+    line = e.net != null ? fmtMoney(e.net, true) : '';
+  } else return;
+  try {
+    toast({ kicker, title, line, open: null });
+    if (typeof notify === 'function') notify(`${kicker}: ${title}`, line, `grp-${e.kind}-${e.uid}-${e.t}`);
+  } catch { /* an alert is never worth breaking a render over */ }
+}
+
+setInterval(grpWatchTick, GRP_WATCH_MS);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') grpWatchTick(); });
+
 /* ------------------------------------------------------------ the owner's ledger
 
    Everything on the board, in one list, newest first. /api/group paints the running summary; this is the
@@ -192,7 +246,8 @@ function renderAdmin() {
     ${grpLedgerHTML()}
     <div class="sec-h" style="margin-top:28px"><h2>Share links</h2><span class="m">One per person</span></div>
     <div class="card grp-share">
-      <p class="grp-lede">Make a link and send it. They tap it once and they're in — no code to type. Turn a link off and only the phones that used it are out.</p>
+      <p class="grp-lede">Make a link and send it. They tap it once and they're in &mdash; no code to type, nothing to install. The link works on any number of phones, so make one per person if you want to be able to turn them off separately. Turning a link off signs out only the phones that used it.</p>
+      <p class="grp-fine" style="margin:0 0 12px">Every phone that opens a link becomes its own row below, even two phones belonging to the same person. Clearing a row tidies the list; it does not sign anyone out, and that phone comes back on its next visit while the link is on.</p>
       <div class="acct-join">
         <label class="fld">Who's it for?<input class="inp" id="grpLabel" autocomplete="off" placeholder="e.g. Mike" maxlength="40"></label>
         <button class="btn" type="button" data-grp-make>Make a link</button>
@@ -269,7 +324,7 @@ function grpPersonHTML(P) {
   const done = P.won + P.lost;
   const roi = P.risk ? (P.net / P.risk) * 100 : null;
   return `<button type="button" class="grp-p" data-grp-person="${esc(P.uid)}">
-    <span class="grp-p-n">${esc(P.name || (A0?.self ? 'You' : 'Someone'))}${A0?.self ? '<em class="grp-self">this device</em>' : ''}${P.via ? `<small>${esc(P.via)}${P.last ? ` · ${esc(ago(P.last))}` : ''}</small>` : ''}</span>
+    <span class="grp-p-n">${esc(P.name || (A0?.self ? 'You' : 'Unnamed device'))}${A0?.self ? '<em class="grp-self">this device</em>' : ''}${P.via ? `<small>${esc(P.via)}${P.last ? ` · ${esc(ago(P.last))}` : ''}</small>` : ''}</span>
     <span class="grp-p-o">${P.open.length ? `${P.open.length} open<small>${esc(fmtMoney(P.open.reduce((t, b) => t + (b.stake || 0), 0)))} at risk</small>` : '<small>nothing open</small>'}</span>
     <span class="grp-p-r">${done ? `<b class="${P.net > 0 ? 'w' : P.net < 0 ? 'l' : ''}">${esc(fmtMoney(P.net, true))}</b><small>${P.won}-${P.lost}${roi != null ? ` · ${roi > 0 ? '+' : ''}${roi.toFixed(0)}%` : ''}</small>` : '<small>no results yet</small>'}</span>
     <span class="grp-p-c">${ICON.chev}</span>
