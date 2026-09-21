@@ -1,0 +1,161 @@
+/* Pick Six — VAS + Live Trigger (vas.js). NFL only.
+
+   THE QUIET STATE IS THE PRODUCT. On a normal Sunday nothing fires for hours, so ARMED is a recessed
+   one-liner with no rule and no number, WATCHING says what it is waiting on, and a FIRED card is the
+   rare exception that earns the accent. VOID is the one state allowed to shout, because a quarterback
+   being out invalidates every branch under it.
+
+   Ink carries everything factual. The accent is spent only on a card with a real measured gap behind
+   it. No green anywhere: in this app green means "your ticket is winning", and a trigger is not a win.
+
+   Markup contract (vas.js emits exactly these — keep the two files in step):
+     panel   .vas-panel > .vas-head > .vas-t + .vas-sub
+             .vas-vectors > .vas-vec.vas-m-{ok,warn,none} > .vas-mark + .vas-vk + .vas-vt
+             .vas-tree(ol) > .vas-branch.vas-c-{state} > .vas-bh > .vas-state.vas-s-{state} + .vas-bn + .vas-cond
+                                                        > .vas-act > .vas-arrow
+                                                        > .vas-why(details) > .vas-wl + .vas-exp
+             .vas-ctx > .vas-facts + .vas-inj > .vas-h4
+             .vas-meas > .vas-h4 + .vas-ml
+     card    .vas-card.vas-c-{state} > .vas-ch(button) > .vas-who + .vas-state + .vas-pick/.vas-odds/
+             .vas-book | .vas-cond + .vas-when
+                                     > .vas-nums > .vas-ev + .vas-vs + .vas-lim + .vas-stake + .vas-held
+     strip   .vas-top > .vas-strip > .vas-head; .vas-more(details); .vas-overflow                      */
+
+/* ─────────────────────────────────────────────────────────── shared shell */
+.vas-panel{margin:var(--s3) 0 0;padding-top:var(--s2);border-top:1px solid var(--line)}
+.vas-head{display:flex;align-items:baseline;gap:var(--s1);margin-bottom:12px}
+.vas-t{margin:0;font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.vas-sub{font-size:12px;color:var(--ink-3)}
+.vas-h4{margin:0 0 6px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3)}
+.vas-fine{margin:8px 0 0;font-size:11px;line-height:1.45;color:var(--ink-3)}
+
+/* ───────────────────────────────────────────────────── the three vectors */
+.vas-vectors{display:grid;gap:2px;margin-bottom:var(--s2)}
+.vas-vec{display:grid;grid-template-columns:14px auto minmax(0,1fr);gap:0 8px;align-items:baseline;
+  padding:5px 0;font-size:13px;line-height:1.4}
+.vas-mark{font-size:12px;font-weight:700;text-align:center;color:var(--ink-3)}
+.vas-vk{font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--ink-3);white-space:nowrap}
+.vas-vt{min-width:0;color:var(--ink-2)}
+.vas-m-ok .vas-mark{color:var(--ink)}
+.vas-m-ok .vas-vt{color:var(--ink)}
+.vas-m-warn .vas-mark{color:var(--accent)}
+.vas-m-warn .vas-vt{color:var(--ink)}
+
+/* ────────────────────────────────────────────────────────── the branches */
+.vas-tree{margin:0;padding:0;list-style:none;display:grid;gap:2px}
+.vas-branch{padding:10px 0;border-top:1px solid var(--line)}
+.vas-tree > .vas-branch:first-child{border-top:0}
+.vas-bh{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0}
+.vas-bn{font-size:14px;font-weight:600;color:var(--ink)}
+.vas-cond{min-width:0;font-size:13px;color:var(--ink-2)}
+.vas-act{display:flex;gap:6px;margin:6px 0 0;font-size:13px;color:var(--ink)}
+.vas-arrow{flex:none;color:var(--ink-3)}
+.vas-when{font-size:12px;color:var(--ink-3)}
+
+/* ARMED — the resting state. Recessed: no rule, no number, clearly not an alert. */
+.vas-c-armed .vas-bn{font-weight:500;color:var(--ink-2)}
+.vas-c-armed .vas-act{color:var(--ink-2)}
+
+/* WATCHING — the condition is true but nothing is measurable. Present, still silent. */
+.vas-c-watching .vas-bn{color:var(--ink)}
+
+/* FIRED — the exception. This is the only place the accent is spent. */
+.vas-c-fired{padding:12px;border:1px solid var(--accent);border-radius:var(--r-md);background:var(--surface)}
+.vas-c-fired .vas-bn{color:var(--ink)}
+
+/* VOID — outranks everything and carries no number, so it is allowed to shout. */
+.vas-c-void{padding:12px;border-radius:var(--r-md);background:var(--fill)}
+.vas-c-void .vas-bn,.vas-c-void .vas-act{color:var(--ink)}
+
+/* the state chip */
+.vas-state{display:inline-flex;align-items:center;flex:none;height:18px;padding:0 7px;border-radius:999px;
+  font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+  background:var(--fill);color:var(--ink-3)}
+.vas-s-watching{color:var(--ink-2)}
+.vas-s-fired{background:var(--accent);color:var(--on-accent)}
+.vas-s-void{background:var(--ink);color:var(--bg)}
+
+/* ──────────────────────────────────────────────────────── "Why" disclosure */
+.vas-why{margin-top:6px}
+.vas-why > summary{display:inline-flex;align-items:center;gap:4px;width:max-content;padding:2px 0;
+  font-size:12px;color:var(--ink-3);cursor:pointer;list-style:none}
+.vas-why > summary::-webkit-details-marker{display:none}
+.vas-why > summary::after{content:"";width:5px;height:5px;margin-left:2px;border-right:1.5px solid currentColor;
+  border-bottom:1.5px solid currentColor;transform:rotate(45deg) translateY(-1px);transition:transform .15s var(--ease)}
+.vas-why[open] > summary::after{transform:rotate(-135deg) translateY(-1px)}
+.vas-why > summary:hover{color:var(--ink-2)}
+.vas-wl{margin:6px 0 0;padding-left:16px;display:grid;gap:3px;font-size:12px;line-height:1.45;color:var(--ink-2)}
+.vas-exp{margin:8px 0 0;font-size:12px;color:var(--ink-3)}
+
+/* ───────────────────────────────────────────── context, injuries, measured */
+.vas-ctx{margin-top:var(--s2);padding-top:12px;border-top:1px solid var(--line)}
+.vas-facts{margin:0;font-size:12px;line-height:1.5;color:var(--ink-3)}
+.vas-inj{margin-top:12px}
+.vas-inj p{margin:0 0 4px;font-size:12px;line-height:1.5;color:var(--ink-2)}
+.vas-inj p b{color:var(--ink);font-weight:600}
+.vas-meas{margin-top:var(--s2);padding-top:12px;border-top:1px solid var(--line)}
+.vas-ml{margin:0;padding:0;list-style:none;display:grid;gap:4px;font-size:13px}
+.vas-ml li{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;color:var(--ink-2)}
+.vas-ml li b{color:var(--ink);font-weight:600}
+
+/* ─────────────────────────────────────────── who is behind (the lag board)
+   Factual, not an alert. A book sitting still is information, not an emergency, so this reads as a
+   measurement: name, how long, how far the market went without it. The accent is never spent here —
+   it belongs to a fired card. The habit rows are quieter still: they are background, useful before
+   anything happens rather than during it. */
+.vas-lag{margin-top:var(--s2);padding-top:12px;border-top:1px solid var(--line)}
+.vas-lag-list{margin:0;padding:0;list-style:none;display:grid;gap:6px}
+.vas-lag-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:13px;color:var(--ink-2)}
+.vas-lag-row b{color:var(--ink);font-weight:600}
+.vas-lag-n{color:var(--ink);font-variant-numeric:tabular-nums}
+.vas-lag-d{color:var(--ink-3)}
+.vas-lag-s{flex-basis:100%;color:var(--ink-2)}
+.vas-lag-none{margin:0;font-size:13px;color:var(--ink-3)}
+.vas-lag-habits{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.vas-lag-habit{font-size:12px;color:var(--ink-3)}
+.vas-lag-habit b{color:var(--ink-2);font-weight:600}
+
+/* the same board as a Live-tab strip */
+.vas-lagstrip{margin-top:var(--s3)}
+.vas-lagstrip .vas-lag-list{gap:2px}
+.vas-lagstrip .vas-lag-row{padding:0}
+.vas-lag-go{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;width:100%;padding:10px 12px;
+  text-align:left;border-radius:var(--r-md);background:var(--fill);font-size:13px;color:var(--ink-2);
+  transition:opacity .15s var(--ease)}
+.vas-lag-go:hover{opacity:.72}
+.vas-lag-go b{color:var(--ink);font-weight:600}
+.vas-lag-gm{font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--ink-3);white-space:nowrap}
+
+/* ──────────────────────────────────────────────── the live strip and cards */
+.vas-top{margin-top:var(--s3)}
+.vas-top[hidden]{display:none}
+.vas-strip{display:grid;gap:var(--s1)}
+.vas-card{padding:12px;border-radius:var(--r-md);background:var(--surface);box-shadow:var(--shadow)}
+.vas-card.vas-c-armed,.vas-card.vas-c-watching{box-shadow:none;background:var(--fill)}
+.vas-card.vas-c-fired{border:1px solid var(--accent)}
+.vas-ch{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%;text-align:left;min-width:0;
+  border-radius:var(--r-sm);transition:opacity .15s var(--ease)}
+.vas-ch:hover{opacity:.72}
+.vas-who{font-size:13px;font-weight:600;color:var(--ink)}
+.vas-pick{font-size:15px;font-weight:600;color:var(--ink)}
+.vas-odds{font-size:14px;color:var(--ink)}
+.vas-book{font-size:12px;color:var(--ink-2)}
+.vas-nums{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;margin-top:8px;font-size:12px;color:var(--ink-2)}
+.vas-ev{font-size:14px;font-weight:600;color:var(--accent)}
+.vas-vs,.vas-lim,.vas-stake{color:var(--ink-3)}
+.vas-lim b,.vas-stake b{color:var(--ink);font-weight:600}
+.vas-held{color:var(--ink-3)}
+.vas-dot{color:var(--ink-3)}
+.vas-more{margin-top:var(--s1)}
+.vas-more > summary{padding:6px 0;font-size:12px;color:var(--ink-3);cursor:pointer}
+.vas-overflow{margin:6px 0 0;font-size:12px;color:var(--ink-3)}
+
+/* ───────────────────────────────────────────────────────────────── phone */
+@media (max-width:480px){
+  /* Two columns, and the sentence drops to its own line rather than being squeezed to a word a line. */
+  .vas-vec{grid-template-columns:14px minmax(0,1fr);row-gap:1px}
+  .vas-vt{grid-column:2}
+  .vas-bh{gap:6px}
+  .vas-cond{flex-basis:100%}
+}
+

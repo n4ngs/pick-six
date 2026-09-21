@@ -79,6 +79,7 @@ function gameSheet() {
     <div class="gs-h">${tm(g.away, 'away')}<div class="gs-mid"><b>${isLive(g) ? '<span class="dot pulse"></span>' : ''}${esc(clockLabel(g))}</b>${esc(isPre(g) ? dayLabel(g.start, true) : g.detail || '')}</div>${tm(g.home, 'home')}</div>
     <div class="gs-meta">${meta.map((m) => `<span class="tag">${esc(m)}</span>`).join('')}${follow(g.away)}${follow(g.home)}</div>
     ${isLive(g) ? `<div class="gs-sec">${fieldSVG(g, true)}<div class="situ"><span>${g.sit?.text ? `<b>${esc(g.sit.text)}</b>` : ''}${g.last ? ` ${esc(g.last.slice(0, 120))}` : ''}</span>${g.sit?.rz ? '<span class="rz">Red zone</span>' : ''}</div></div>` : ''}
+    ${typeof vasPanel === 'function' ? vasPanel(g) : ''}
     <div class="gs-grid gs-sec">
       <div>
         <div class="sub-h">Line movement <span class="seg" style="padding:2px" role="group" aria-label="Chart market"><button type="button" data-cm="s" aria-pressed="${mkt === 's'}" style="height:28px">Spread</button><button type="button" data-cm="t" aria-pressed="${mkt === 't'}" style="height:28px">Total</button></span></div>
@@ -402,12 +403,12 @@ function returnFromSlip(r) {
 
 function openSlip(opts = {}) {
   let slip;
-  if (opts.parlay) slip = { legs: S.parlay.map((l) => ({ ...l })), stake: S.unit, book: S.parlay.find((l) => l.book)?.book || '', parlay: true };
+  if (opts.parlay) slip = { legs: S.parlay.map((l) => ({ ...l })), stake: null, book: S.parlay.find((l) => l.book)?.book || '', parlay: true };
   else if (opts.gid) {
     const g = gameById(opts.gid);
     const l = legFrom(g, opts.mkt, opts.side, opts.book);
-    slip = { legs: [l], stake: S.unit, book: l.book, odds: l.odds };
-  } else slip = { legs: [], stake: S.unit, book: '', pick: true };
+    slip = { legs: [l], stake: null, book: l.book, odds: l.odds };
+  } else slip = { legs: [], stake: null, book: '', pick: true };
   S.sheet = { kind: 'slip', slip, returnTo: sheetOrigin() };
   paintSlip();
   showSheet('slip', true);
@@ -477,7 +478,7 @@ function paintSlip() {
     <div class="fgrid">
       ${single && legs[0].l.mkt !== 'ml' ? `<label class="fld">Line<input class="inp" id="slLine" inputmode="text" autocomplete="off" value="${esc(lineVal)}"></label>` : ''}
       <label class="fld">${single ? 'Odds' : 'Ticket odds'}<input class="inp" id="slOdds" inputmode="text" autocomplete="off" value="${esc(Number.isFinite(odds) ? String(odds) : '')}"></label>
-      <label class="fld">Stake ($)<input class="inp" id="slStake" inputmode="decimal" autocomplete="off" value="${esc(Number.isFinite(sl.stake) ? String(sl.stake) : '')}"></label>
+      <label class="fld">Stake ($)<input class="inp" id="slStake" inputmode="decimal" autocomplete="off" placeholder="${esc(String(S.unit))}" value="${esc(Number.isFinite(sl.stake) ? String(sl.stake) : '')}"></label>
       ${single && !sl.parlay && sl.book !== 'other' ? '' : `<label class="fld">Book<select class="inp" id="slBook">${bookOpts}</select></label>`}
       <label class="fld full">Note<input class="inp" id="slNote" style="font-weight:500;font-size:15px" placeholder="Optional: why you like it" value="${esc(sl.note || '')}"></label>
     </div>

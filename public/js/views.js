@@ -118,6 +118,7 @@ function renderLive() {
   renderMoveCards();
   if (typeof edgeLive === 'function' && !(typeof limBreak === 'function' && limBreak())) edgeLive(); // Edge Finder: top edges on the Live tab (edge.js)
   else $('#edgeTop')?.remove(); // hidden while you're taking a break (limits.js)
+  if (typeof vasRenderLive === 'function') vasRenderLive(); // VAS live triggers (vas.js)
   renderHero(live, pre);
   renderHeroSide();
 
@@ -338,7 +339,7 @@ function renderLearn() {
     <h3>New to betting?</h3>
     <p>Eight ideas explain almost every number on this app.</p>
     <div class="terms">
-      <div class="term"><b>Spread</b><span>Points added to the underdog. Alabama −19.5 has to win by 20 or more; Florida State +19.5 covers by losing by 19 or fewer.</span></div>
+      <div class="term"><b>Spread</b><span>Points added to the underdog. A team at −6.5 has to win by 7 or more; the other side at +6.5 covers by losing by 6 or fewer — or winning outright.</span></div>
       <div class="term"><b>Total (over/under)</b><span>Both teams' points added together. Bet whether the game lands over or under the number.</span></div>
       <div class="term"><b>Moneyline</b><span>Just pick the winner. −300 means risk $300 to win $100; +250 means $100 wins $250.</span></div>
       <div class="term"><b>Juice</b><span>The −110 next to most lines. It's the book's cut: risk $110 to win $100. Better juice at another book adds up over a season.</span></div>
