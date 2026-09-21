@@ -794,6 +794,22 @@ function indexHTML() {
 
 const server = http.createServer(async (req, res) => {
   res.__ae = req.headers['accept-encoding'] || '';   // read by sendBody(); keeps ~30 call sites unchanged
+  /* Security headers, on every response. Set with setHeader so writeHead() further down merges them in.
+
+     frame-ancestors / X-Frame-Options: nothing may frame this app. The Admin Center has destructive
+       two-tap actions, and a page that can be framed can be clickjacked into tapping them.
+     nosniff: a response is only ever the type it says it is.
+     Referrer-Policy same-origin: the board links out to sportsbooks; those sites learn nothing about
+       which page, game or link someone came from.
+     HSTS: Railway serves HTTPS; once a phone has seen it, it never tries plain HTTP again.
+     CSP is limited to what cannot break anything: no plugins, no foreign <base>, forms only to this
+       origin. It deliberately does not restrict script-src, because index.html carries inline scripts. */
+  res.setHeader('x-content-type-options', 'nosniff');
+  res.setHeader('x-frame-options', 'DENY');
+  res.setHeader('referrer-policy', 'same-origin');
+  res.setHeader('strict-transport-security', 'max-age=31536000');
+  res.setHeader('permissions-policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  res.setHeader('content-security-policy', "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'");
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const p = url.pathname;
   const M = req.method;
